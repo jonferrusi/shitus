@@ -1,0 +1,13 @@
+0000000000000000000000000000000000000000 4e2ada325da75d94145664d6484ad7346be862cb Replit Agent <agent@replit.com> 1784049115 +0000	commit (initial): Initial commit
+4e2ada325da75d94145664d6484ad7346be862cb af3cdfbd1003548c2a07715ac5d545566a316892 Replit Agent <agent@replit.com> 1784049117 +0000	commit: Initialize project with documentation, configuration files, and admin interface
+af3cdfbd1003548c2a07715ac5d545566a316892 3edfe4e4fd8a89178ef1d7572d2847ed67c640a2 Replit Agent <agent@replit.com> 1784049382 +0000	commit: Update dependencies and add lock file with Replit configuration
+3edfe4e4fd8a89178ef1d7572d2847ed67c640a2 8c5e17b8c82162764a8b845fa0eec6555d3ff21d Replit Agent <agent@replit.com> 1784049530 +0000	commit: Add Replit configuration and documentation
+8c5e17b8c82162764a8b845fa0eec6555d3ff21d 15b84e8ad25105c8f17086ebee818201638c8d61 Replit Agent <agent@replit.com> 1784050093 +0000	commit: Add Replit configuration
+15b84e8ad25105c8f17086ebee818201638c8d61 6a77607da8f6dd750ded37e1c454797c4579e076 Replit Agent <agent@replit.com> 1784050304 +0000	commit: Published your App
+6a77607da8f6dd750ded37e1c454797c4579e076 16245d05634a8f9dfea47ca91b80fec5b48bb433 Replit Agent <agent@replit.com> 1784050970 +0000	commit: Add mockup sandbox environment with preview plugin and configuration files
+16245d05634a8f9dfea47ca91b80fec5b48bb433 3eb8782b7e95a2baceb7bda3628d2527acb5893f Replit Agent <agent@replit.com> 1784051139 +0000	commit: Add admin dashboard functionality and image asset handling
+3eb8782b7e95a2baceb7bda3628d2527acb5893f e5f924aef2daba8a0d3a209a76a7d3e1b7b3a58c Replit Agent <agent@replit.com> 1784051277 +0000	commit: Add ShiftUs logo image and update HTML references across pages
+e5f924aef2daba8a0d3a209a76a7d3e1b7b3a58c 32e7f360d17894ccdb2b9e0e646fc3b9380a2996 Replit Agent <agent@replit.com> 1784051548 +0000	commit: Update styling and refactor command formatting logic
+32e7f360d17894ccdb2b9e0e646fc3b9380a2996 409a81c0c9fe4fbadf777cee81727e44eccc29d0 Replit Agent <agent@replit.com> 1784074467 +0000	commit: Enhance admin interface with expanded functionality and improved controls
+409a81c0c9fe4fbadf777cee81727e44eccc29d0 9de2d62b196bc1ecd1d35a337665ba59965fe536 Replit Agent <agent@replit.com> 1784077377 +0000	commit: Published your App
+9de2d62b196bc1ecd1d35a337665ba59965fe536 084117236bc80e98068da3be79d3aea87a8421b5 Replit Agent <agent@replit.com> 1784077646 +0000	commit: Update admin panel layout and styling with improved server configuration
