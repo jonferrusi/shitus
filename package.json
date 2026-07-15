@@ -1,0 +1,23 @@
+{
+  "name": "shift-tracker-bot",
+  "version": "1.0.0",
+  "description": "Discord shift-tracking bot with a web dashboard (clock in/out, shift types, weekly quotas).",
+  "main": "src/bot.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "bot-only": "node src/bot.js",
+    "web-only": "node src/server.js",
+    "deploy-commands": "node src/deploy-commands.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "discord.js": "^14.26.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "express-session": "^1.19.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

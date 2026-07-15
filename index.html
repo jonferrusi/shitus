@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shiftus</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="login-screen">
+    <img src="/images/shiftus-logo.png" alt="Shiftus" style="width:300px;margin-bottom:24px;filter:drop-shadow(0 0 32px rgba(27,150,255,0.35));" />
+    <p>Clock on, clock off, and keep an eye on your weekly quota. Sign in with the Discord account you use on the server to see your hours.</p>
+
+    <div id="error" style="display:none" class="error-banner"></div>
+
+    <a class="btn btn-accent" href="/auth/login" style="padding: 12px 22px; font-size: 14px;">
+      Sign in with Discord
+    </a>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const error = params.get("error");
+    if (error) {
+      const messages = {
+        not_in_server: "That Discord account isn't a member of the server this bot manages.",
+        login_failed: "Something went wrong signing you in. Please try again.",
+        missing_code: "Sign-in was cancelled.",
+      };
+      const el = document.getElementById("error");
+      el.textContent = messages[error] || "Something went wrong signing you in.";
+      el.style.display = "block";
+    }
+
+    // If already logged in, skip straight to the dashboard.
+    fetch("/api/me").then((r) => {
+      if (r.ok) location.href = "/dashboard.html";
+    });
+  </script>
+</body>
+</html>

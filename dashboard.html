@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shiftus — Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><img src="/images/shiftus-logo.png" alt="Shiftus" style="width:148px;height:auto;" /></div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard.html" class="nav-link active">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a id="admin-link" href="/admin.html" class="nav-link" style="display:none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6l-8-4Z"/></svg>
+          Admin
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user">
+          <img id="avatar" class="avatar" alt="" />
+          <span id="username">—</span>
+        </div>
+        <button class="btn btn-ghost" id="logout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page">
+        <div class="page-head">
+          <p class="eyebrow">Current Status</p>
+          <h1>Overview</h1>
+        </div>
+
+        <div class="section">
+          <div class="ticket" id="ticket">
+            <div class="ticket-status">
+              <div class="status-dot"></div>
+              <div>
+                <div class="ticket-label" id="ticket-label">Loading…</div>
+                <div class="ticket-type" id="ticket-type">—</div>
+              </div>
+            </div>
+            <div class="ticket-timer" id="ticket-timer">00:00:00</div>
+          </div>
+          <div class="controls-row" id="controls"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head"><h2>This Week</h2></div>
+          <div id="quotas" class="card"></div>
+        </div>
+
+        <div class="section" id="log-time-section" style="display:none;">
+          <div class="section-head"><h2>Log Time</h2></div>
+          <div class="card">
+            <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
+              Add a completed shift by hand. This is for time that wasn't clocked with <span class="mono" style="color: var(--accent)">/shift on</span> / <span class="mono" style="color: var(--accent)">off</span> in Discord.
+            </p>
+            <form id="manual-form" class="form-row">
+              <select id="manual-type" required></select>
+              <input type="date" id="manual-date" required />
+              <input type="number" id="manual-hours" min="0.25" step="0.25" placeholder="Hours" required />
+              <button class="btn btn-accent" type="submit">Add Time</button>
+            </form>
+            <div id="manual-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+          </div>
+        </div>
+
+        <div class="section" id="alltime-section" style="display:none;">
+          <div class="section-head"><h2>All-Time</h2></div>
+          <div id="alltime" class="card"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-head"><h2>Shift History</h2></div>
+          <div class="card" style="padding: 8px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Started</th>
+                  <th class="mono">Duration</th>
+                </tr>
+              </thead>
+              <tbody id="history-body"></tbody>
+            </table>
+            <div id="history-empty" class="empty" style="display:none;">No completed shifts yet. Clock on in Discord with <span class="mono" style="color: var(--accent)">/shift on</span>.</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
