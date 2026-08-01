@@ -237,25 +237,26 @@
     controls.appendChild(endBtn);
   }
 
-  function renderQuotas(totals, quotas) {
+  const PERIOD_LABEL = { weekly: "", biweekly: " (biweekly)", monthly: " (monthly)" };
+
+  function renderQuotas(totals, quotaProgress) {
     const container = document.getElementById("quotas");
     if (!totals.length) {
       container.innerHTML = `<div class="empty">No shift types configured yet.</div>`;
       return;
     }
 
-    const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
-    const overallQuota = quotaByType.get(null);
-    const overallSeconds = totals.reduce((sum, t) => sum + t.total_seconds, 0);
+    const rows = quotaProgress.map((q) =>
+      quotaRowHtml((q.shiftTypeName ?? "Overall") + PERIOD_LABEL[q.period], q.seconds, q.hoursRequired)
+    );
 
-    const rows = [];
-    if (overallQuota != null) {
-      rows.push(quotaRowHtml("Overall", overallSeconds, overallQuota));
-    }
+    // Shift types with no quota of their own still show this week's hours, plain.
+    const quotedTypeIds = new Set(quotaProgress.map((q) => q.shiftTypeId));
     for (const t of totals) {
-      const required = quotaByType.get(t.shift_type_id);
-      rows.push(quotaRowHtml(t.shift_type_name, t.total_seconds, required));
+      if (quotedTypeIds.has(t.shift_type_id)) continue;
+      rows.push(quotaRowHtml(t.shift_type_name, t.total_seconds, null));
     }
+
     container.innerHTML = rows.join("");
   }
 
@@ -323,7 +324,7 @@
     activeShift = data.active;
     renderTicket();
     renderControls();
-    renderQuotas(data.totals, data.quotas);
+    renderQuotas(data.totals, data.quotaProgress);
     renderAllTime(data.allTimeTotals);
   }
 

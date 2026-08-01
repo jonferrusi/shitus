@@ -8,6 +8,7 @@ const db = require("./db");
 const discordApi = require("./discordApi");
 const stripeService = require("./stripe");
 const shiftActions = require("./shiftActions");
+const reminders = require("./reminders");
 
 const app = express();
 
@@ -243,15 +244,26 @@ app.post("/api/communities/join", requireAuth, async (req, res) => {
 // Community-scoped API
 // ---------------------------------------------------------------------------
 communityRouter.get("/", (req, res) => {
+  const c = req.community;
   res.json({
-    id: req.community.id,
-    guildId: req.community.guild_id,
-    name: req.community.name,
-    icon: req.community.icon,
-    subscriptionStatus: req.community.subscription_status,
-    inviteSlug: req.community.invite_slug,
+    id: c.id,
+    guildId: c.guild_id,
+    name: c.name,
+    icon: c.icon,
+    subscriptionStatus: c.subscription_status,
+    inviteSlug: c.invite_slug,
     isAdmin: req.isAdmin,
     canAddTime: req.canAddTime,
+    weekStartDay: c.week_start_day,
+    weekStartHour: c.week_start_hour,
+    onShiftRoleId: c.on_shift_role_id,
+    supervisorCheckRoleId: c.supervisor_check_role_id,
+    activeSupervisorRoleId: c.active_supervisor_role_id,
+    loaRoleId: c.loa_role_id,
+    reminderDay: c.reminder_day,
+    reminderHour: c.reminder_hour,
+    reminderThresholdHours: c.reminder_threshold_hours,
+    lastReminderDate: c.last_reminder_date,
   });
 });
 
@@ -265,6 +277,7 @@ communityRouter.get("/summary", (req, res) => {
   const totals = db.weeklyTotalsByType(req.community.id, discordId, weekStart);
   const allTimeTotals = db.allTimeTotalsByType(req.community.id, discordId);
   const quotas = db.listQuotas(req.community.id);
+  const quotaProgress = db.quotaProgressForMember(req.community, discordId);
 
   res.json({
     active: active ? { ...active, shift_type_name: activeType?.name } : null,
@@ -272,6 +285,7 @@ communityRouter.get("/summary", (req, res) => {
     totals,
     allTimeTotals,
     quotas,
+    quotaProgress,
   });
 });
 
@@ -360,7 +374,22 @@ communityRouter.get("/admin/roster", requireCommunityAdmin, (req, res) => {
   const weekStart = db.currentWeekStart(req.community);
   const roster = db.rosterWeeklyData(req.community.id, weekStart);
   const overallQuota = db.listQuotas(req.community.id).find((q) => q.shift_type_id === null);
-  res.json({ weekStart, quotaHours: overallQuota?.hours_required ?? null, roster });
+
+  // The "hours" column is always calendar-week (per the roster's own
+  // definition), but the Met/Below badge needs to reflect the overall
+  // quota's own period (e.g. monthly), which can span more than this week.
+  const rosterWithQuota = roster.map((member) => {
+    if (!overallQuota) return member;
+    const progress = db.quotaProgressForMember(req.community, member.discord_id).find((q) => q.shiftTypeId === null);
+    return { ...member, quota_met: progress?.met ?? false, quota_seconds: progress?.seconds ?? 0 };
+  });
+
+  res.json({
+    weekStart,
+    quotaHours: overallQuota?.hours_required ?? null,
+    quotaPeriod: overallQuota?.period ?? null,
+    roster: rosterWithQuota,
+  });
 });
 
 communityRouter.get("/admin/shifttypes", requireCommunityAdmin, (req, res) => {
@@ -420,9 +449,12 @@ communityRouter.get("/admin/quotas", requireCommunityAdmin, (req, res) => {
 });
 
 communityRouter.post("/admin/quotas", requireCommunityAdmin, (req, res) => {
-  const { shiftTypeId, hours } = req.body;
+  const { shiftTypeId, hours, period } = req.body;
   if (typeof hours !== "number" || hours < 0) return res.status(400).json({ error: "invalid_hours" });
-  db.setQuota(req.community.id, shiftTypeId ?? null, hours);
+  if (period && !["weekly", "biweekly", "monthly"].includes(period)) {
+    return res.status(400).json({ error: "invalid_period" });
+  }
+  db.setQuota(req.community.id, shiftTypeId ?? null, hours, period || "weekly");
   res.json({ ok: true });
 });
 
@@ -438,8 +470,27 @@ communityRouter.get("/admin/active", requireCommunityAdmin, (req, res) => {
   res.json(db.listAllActiveShifts(req.community.id));
 });
 
+communityRouter.post("/admin/active/:shiftId/force-end", requireCommunityAdmin, async (req, res) => {
+  const shift = db.getShiftById(Number(req.params.shiftId));
+  if (!shift || shift.community_id !== req.community.id || shift.end_time !== null) {
+    return res.status(404).json({ error: "shift_not_found" });
+  }
+  const duration = await shiftActions.forceEndShift(req.community, shift, req.session.user.username);
+  res.json({ ok: true, durationSeconds: duration });
+});
+
 communityRouter.get("/admin/members", requireCommunityAdmin, (req, res) => {
   res.json(db.listAllUsers(req.community.id));
+});
+
+communityRouter.post("/admin/shifts/remove", requireCommunityAdmin, (req, res) => {
+  const { discordId, hours } = req.body;
+  const hoursNum = Number(hours);
+  if (!discordId) return res.status(400).json({ error: "discordId_required" });
+  if (!Number.isFinite(hoursNum) || hoursNum <= 0) return res.status(400).json({ error: "invalid_hours" });
+
+  const removed = db.removeRecentTime(req.community.id, discordId, hoursNum);
+  res.json({ ok: true, hoursRemoved: removed });
 });
 
 communityRouter.post("/admin/shifts/manual", requireCommunityAdmin, requireActiveSubscription, (req, res) => {
@@ -459,6 +510,116 @@ communityRouter.post("/admin/shifts/manual", requireCommunityAdmin, requireActiv
   }
 
   db.addManualShift(req.community.id, discordId, shiftType.id, date, hoursNum);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Week schedule
+// ---------------------------------------------------------------------------
+communityRouter.post("/admin/schedule", requireCommunityAdmin, (req, res) => {
+  const weekStartDay = Number(req.body.weekStartDay);
+  const weekStartHour = Number(req.body.weekStartHour);
+  if (!Number.isInteger(weekStartDay) || weekStartDay < 0 || weekStartDay > 6) {
+    return res.status(400).json({ error: "invalid_day" });
+  }
+  if (!Number.isInteger(weekStartHour) || weekStartHour < 0 || weekStartHour > 23) {
+    return res.status(400).json({ error: "invalid_hour" });
+  }
+  db.updateCommunitySchedule(req.community.id, { weekStartDay, weekStartHour });
+  res.json({ ok: true });
+});
+
+communityRouter.post("/admin/schedule/force-end-week", requireCommunityAdmin, (req, res) => {
+  const result = db.forceEndWeek(req.community);
+  res.json({ ok: true, ...result });
+});
+
+// ---------------------------------------------------------------------------
+// On-shift / LOA role configuration
+// ---------------------------------------------------------------------------
+communityRouter.post("/admin/role-config", requireCommunityAdmin, (req, res) => {
+  const { onShiftRoleId, supervisorCheckRoleId, activeSupervisorRoleId, loaRoleId } = req.body;
+  db.updateCommunityRoles(req.community.id, {
+    onShiftRoleId: onShiftRoleId || null,
+    supervisorCheckRoleId: supervisorCheckRoleId || null,
+    activeSupervisorRoleId: activeSupervisorRoleId || null,
+    loaRoleId: loaRoleId || null,
+  });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Quota reminders
+// ---------------------------------------------------------------------------
+communityRouter.post("/admin/reminders", requireCommunityAdmin, (req, res) => {
+  const { reminderDay, reminderThresholdHours } = req.body;
+  const reminderHour = Number(req.body.reminderHour ?? 0);
+  const day = reminderDay === null || reminderDay === "" ? null : Number(reminderDay);
+  const threshold = Number(reminderThresholdHours);
+
+  if (day !== null && (!Number.isInteger(day) || day < 0 || day > 6)) {
+    return res.status(400).json({ error: "invalid_day" });
+  }
+  if (!Number.isInteger(reminderHour) || reminderHour < 0 || reminderHour > 23) {
+    return res.status(400).json({ error: "invalid_hour" });
+  }
+  if (!Number.isFinite(threshold) || threshold < 0) {
+    return res.status(400).json({ error: "invalid_threshold" });
+  }
+
+  db.updateCommunityReminders(req.community.id, { reminderDay: day, reminderHour, reminderThresholdHours: threshold });
+  res.json({ ok: true });
+});
+
+communityRouter.post("/admin/reminders/send", requireCommunityAdmin, async (req, res) => {
+  const { discordId } = req.body;
+  if (!discordId) return res.status(400).json({ error: "discordId_required" });
+
+  const sent = await reminders.sendReminder(req.community, discordId);
+  res.json({ ok: true, sent });
+});
+
+// ---------------------------------------------------------------------------
+// LOA (Leave of Absence)
+// ---------------------------------------------------------------------------
+communityRouter.get("/admin/loa/pending", requireCommunityAdmin, (req, res) => {
+  res.json(db.listPendingLoaRequests(req.community.id));
+});
+
+communityRouter.get("/admin/loa/history", requireCommunityAdmin, (req, res) => {
+  res.json(db.listLoaHistory(req.community.id));
+});
+
+communityRouter.post("/admin/loa/:id/approve", requireCommunityAdmin, async (req, res) => {
+  const loaRequest = db.getLoaRequest(Number(req.params.id));
+  if (!loaRequest || loaRequest.community_id !== req.community.id || loaRequest.status !== "pending") {
+    return res.status(404).json({ error: "not_found" });
+  }
+
+  const member = await discordApi.getGuildMember(req.community.guild_id, loaRequest.discord_id);
+  const originalNickname = member?.nick ?? null;
+  db.reviewLoaRequest(loaRequest.id, "approved", req.session.user.id, originalNickname);
+
+  let roleWarning = null;
+  if (req.community.loa_role_id) {
+    const roleOk = await discordApi.addMemberRole(req.community.guild_id, loaRequest.discord_id, req.community.loa_role_id);
+    if (!roleOk) roleWarning = "Couldn't assign the LOA role — check that the bot's role is ranked above it.";
+  }
+
+  const baseName = member?.nick || db.listAllUsers(req.community.id).find((u) => u.discord_id === loaRequest.discord_id)?.username || "Member";
+  const newNick = `LOA | ${baseName}`.slice(0, 32);
+  const nickOk = await discordApi.setMemberNickname(req.community.guild_id, loaRequest.discord_id, newNick);
+  if (!nickOk && !roleWarning) roleWarning = "Couldn't rename the member — the bot may lack permission.";
+
+  res.json({ ok: true, warning: roleWarning });
+});
+
+communityRouter.post("/admin/loa/:id/deny", requireCommunityAdmin, (req, res) => {
+  const loaRequest = db.getLoaRequest(Number(req.params.id));
+  if (!loaRequest || loaRequest.community_id !== req.community.id || loaRequest.status !== "pending") {
+    return res.status(404).json({ error: "not_found" });
+  }
+  db.reviewLoaRequest(loaRequest.id, "denied", req.session.user.id, null);
   res.json({ ok: true });
 });
 

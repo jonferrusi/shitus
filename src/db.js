@@ -106,6 +106,12 @@ ensureColumn("communities", "on_shift_role_id", "on_shift_role_id TEXT");
 ensureColumn("communities", "supervisor_check_role_id", "supervisor_check_role_id TEXT");
 ensureColumn("communities", "active_supervisor_role_id", "active_supervisor_role_id TEXT");
 ensureColumn("communities", "loa_role_id", "loa_role_id TEXT");
+ensureColumn("communities", "reminder_day", "reminder_day INTEGER"); // 0=Sunday...6=Saturday, NULL = disabled
+ensureColumn("communities", "reminder_hour", "reminder_hour INTEGER NOT NULL DEFAULT 0");
+ensureColumn("communities", "reminder_threshold_hours", "reminder_threshold_hours REAL NOT NULL DEFAULT 0");
+ensureColumn("communities", "last_reminder_date", "last_reminder_date TEXT"); // YYYY-MM-DD, guards against double-sending
+ensureColumn("communities", "week_anchor_override", "week_anchor_override INTEGER");
+ensureColumn("quotas", "period", "period TEXT NOT NULL DEFAULT 'weekly'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS loa_requests (
@@ -121,6 +127,16 @@ db.exec(`
     original_nickname  TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_loa_community ON loa_requests(community_id, status);
+
+  CREATE TABLE IF NOT EXISTS weekly_reports (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    community_id   INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    week_start     INTEGER NOT NULL,
+    week_end       INTEGER NOT NULL,
+    generated_at   INTEGER NOT NULL,
+    data           TEXT NOT NULL -- JSON: { quotaHours, roster: [...] }
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reports_unique ON weekly_reports(community_id, week_start);
 `);
 
 // (Later phases add columns/tables here, e.g. reminder settings — via
@@ -179,6 +195,45 @@ function updateCommunityRoles(communityId, { onShiftRoleId, supervisorCheckRoleI
   ).run(onShiftRoleId, supervisorCheckRoleId, activeSupervisorRoleId, loaRoleId, communityId);
 }
 
+function updateCommunityReminders(communityId, { reminderDay, reminderHour, reminderThresholdHours }) {
+  db.prepare(
+    `UPDATE communities SET reminder_day = ?, reminder_hour = ?, reminder_threshold_hours = ? WHERE id = ?`
+  ).run(reminderDay, reminderHour, reminderThresholdHours, communityId);
+}
+
+function setLastReminderDate(communityId, dateStr) {
+  db.prepare(`UPDATE communities SET last_reminder_date = ? WHERE id = ?`).run(dateStr, communityId);
+}
+
+function saveWeeklyReport(communityId, weekStart, weekEnd, data) {
+  db.prepare(
+    `INSERT INTO weekly_reports (community_id, week_start, week_end, generated_at, data) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(community_id, week_start) DO UPDATE SET week_end = excluded.week_end, generated_at = excluded.generated_at, data = excluded.data`
+  ).run(communityId, weekStart, weekEnd, Math.floor(Date.now() / 1000), JSON.stringify(data));
+}
+
+function getWeeklyReport(communityId, weekStart) {
+  const row = db.prepare("SELECT * FROM weekly_reports WHERE community_id = ? AND week_start = ?").get(communityId, weekStart);
+  if (!row) return null;
+  return { ...row, data: JSON.parse(row.data) };
+}
+
+/**
+ * Ends the current quota week early: snapshots a report for the week so far,
+ * then moves the week boundary to right now so the next one starts fresh.
+ */
+function forceEndWeek(community) {
+  const now = Math.floor(Date.now() / 1000);
+  const weekStart = currentWeekStart(community);
+  const roster = rosterWeeklyData(community.id, weekStart);
+  const overallQuota = listQuotas(community.id).find((q) => q.shift_type_id === null);
+
+  saveWeeklyReport(community.id, weekStart, now, { quotaHours: overallQuota?.hours_required ?? null, roster });
+  db.prepare("UPDATE communities SET week_anchor_override = ? WHERE id = ?").run(now, community.id);
+
+  return { weekStart, weekEnd: now };
+}
+
 function setSubscriptionStatus(communityId, status) {
   db.prepare("UPDATE communities SET subscription_status = ? WHERE id = ?").run(status, communityId);
 }
@@ -219,6 +274,11 @@ function listCommunitiesForMember(discordId) {
     .all(discordId);
 }
 
+/** Every community — used by the hourly scheduler to check reminders/week rollover for each. */
+function listAllCommunities() {
+  return db.prepare("SELECT * FROM communities").all();
+}
+
 // ---------------------------------------------------------------------------
 // Week helpers — per-community week boundary
 // ---------------------------------------------------------------------------
@@ -237,7 +297,13 @@ function currentWeekStart(community, nowMs = Date.now()) {
   const start = new Date(now);
   start.setUTCHours(weekStartHour, 0, 0, 0);
   start.setUTCDate(start.getUTCDate() - diff);
-  return Math.floor(start.getTime() / 1000);
+  const naturalStart = Math.floor(start.getTime() / 1000);
+
+  // "Force End Week Now" sets week_anchor_override to the moment it was
+  // clicked, so the new week starts exactly then instead of waiting for the
+  // next scheduled boundary. Once the next natural boundary passes the
+  // override, the natural calculation takes back over on its own.
+  return Math.max(naturalStart, community?.week_anchor_override ?? 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,17 +404,18 @@ function effectiveRoleIds(communityId, permission) {
 // ---------------------------------------------------------------------------
 // Quotas
 // ---------------------------------------------------------------------------
-function setQuota(communityId, shiftTypeId, hours) {
+function setQuota(communityId, shiftTypeId, hours, period = "weekly") {
   db.prepare(
-    `INSERT INTO quotas (community_id, shift_type_id, hours_required) VALUES (?, ?, ?)
-     ON CONFLICT(community_id, COALESCE(shift_type_id, 0)) DO UPDATE SET hours_required = excluded.hours_required`
-  ).run(communityId, shiftTypeId, hours);
+    `INSERT INTO quotas (community_id, shift_type_id, hours_required, period) VALUES (?, ?, ?, ?)
+     ON CONFLICT(community_id, COALESCE(shift_type_id, 0)) DO UPDATE SET
+       hours_required = excluded.hours_required, period = excluded.period`
+  ).run(communityId, shiftTypeId, hours, period);
 }
 
 function listQuotas(communityId) {
   return db
     .prepare(
-      `SELECT q.shift_type_id, q.hours_required, st.name as shift_type_name
+      `SELECT q.shift_type_id, q.hours_required, q.period, st.name as shift_type_name
        FROM quotas q
        LEFT JOIN shift_types st ON st.id = q.shift_type_id
        WHERE q.community_id = ?
@@ -359,6 +426,72 @@ function listQuotas(communityId) {
 
 function deleteQuota(communityId, shiftTypeId) {
   db.prepare(`DELETE FROM quotas WHERE community_id = ? AND shift_type_id IS ?`).run(communityId, shiftTypeId);
+}
+
+/**
+ * Unix-second start of the current period window for a quota, given its
+ * period ("weekly" | "biweekly" | "monthly"). Weekly/biweekly stay anchored
+ * to the community's configured week boundary; biweekly counts whole weeks
+ * since the Unix epoch so every community lands on a consistent 14-day
+ * cadence without needing a stored anchor date. Monthly is a plain calendar
+ * month in UTC, starting at the community's week_start_hour.
+ */
+function quotaWindowStart(community, period, nowMs = Date.now()) {
+  const weekStart = currentWeekStart(community, nowMs);
+
+  if (period === "monthly") {
+    const now = new Date(nowMs);
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, community?.week_start_hour ?? 0));
+    return Math.floor(start.getTime() / 1000);
+  }
+
+  if (period === "biweekly") {
+    const weeksSinceEpoch = Math.floor(weekStart / (7 * 86400));
+    return weeksSinceEpoch % 2 === 0 ? weekStart : weekStart - 7 * 86400;
+  }
+
+  return weekStart; // "weekly"
+}
+
+/**
+ * Every configured quota for a community, each with the member's progress
+ * against it computed over that quota's own period window. This is the
+ * canonical "how's this person doing" computation — used by the dashboard,
+ * /shift on|off|status, the panel, and the roster's quota badge — so a
+ * biweekly or monthly quota is measured correctly everywhere, not just in
+ * the admin panel that configured it.
+ */
+function quotaProgressForMember(community, discordId, nowMs = Date.now()) {
+  const quotas = listQuotas(community.id);
+
+  return quotas.map((quota) => {
+    const windowStart = quotaWindowStart(community, quota.period, nowMs);
+    const seconds =
+      quota.shift_type_id === null
+        ? db
+            .prepare(
+              `SELECT COALESCE(SUM(duration_seconds), 0) as total FROM shifts
+               WHERE community_id = ? AND discord_id = ? AND end_time IS NOT NULL AND start_time >= ?`
+            )
+            .get(community.id, discordId, windowStart).total
+        : db
+            .prepare(
+              `SELECT COALESCE(SUM(duration_seconds), 0) as total FROM shifts
+               WHERE community_id = ? AND discord_id = ? AND shift_type_id = ? AND end_time IS NOT NULL AND start_time >= ?`
+            )
+            .get(community.id, discordId, quota.shift_type_id, windowStart).total;
+
+    const hours = seconds / 3600;
+    return {
+      shiftTypeId: quota.shift_type_id,
+      shiftTypeName: quota.shift_type_name,
+      period: quota.period,
+      windowStart,
+      seconds,
+      hoursRequired: quota.hours_required,
+      met: hours >= quota.hours_required,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -673,12 +806,18 @@ module.exports = {
   updateCommunityGuildInfo,
   updateCommunitySchedule,
   updateCommunityRoles,
+  updateCommunityReminders,
+  setLastReminderDate,
+  saveWeeklyReport,
+  getWeeklyReport,
+  forceEndWeek,
   setSubscriptionStatus,
   setStripeIds,
   getCommunityByStripeCustomerId,
   addCommunityMember,
   isCommunityMember,
   listCommunitiesForMember,
+  listAllCommunities,
   // users
   upsertUser,
   // shift types
@@ -697,6 +836,8 @@ module.exports = {
   setQuota,
   listQuotas,
   deleteQuota,
+  quotaWindowStart,
+  quotaProgressForMember,
   // shifts
   getShiftById,
   getActiveShift,

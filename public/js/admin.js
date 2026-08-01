@@ -4,6 +4,7 @@
   const { esc, formatDuration, api, loadCommunities, renderCommunitySwitcher } = window.Shiftus;
 
   let communityId = null;
+  let community = null;
   let roles = [];
   let shiftTypes = [];
   let members = [];
@@ -19,6 +20,13 @@
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
     return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  }
+
+  function hourOptions(selectedHour) {
+    return Array.from({ length: 24 }, (_, h) => {
+      const label = h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`;
+      return `<option value="${h}"${h === selectedHour ? " selected" : ""}>${label}</option>`;
+    }).join("");
   }
 
   async function loadMe() {
@@ -65,9 +73,19 @@
           <td>${esc(s.username || s.discord_id)}${status}</td>
           <td>${esc(s.shift_type_name)}</td>
           <td class="mono">${formatElapsed(elapsed)}</td>
+          <td><button class="btn btn-danger" data-force-end="${s.id}">Force End</button></td>
         </tr>`;
       })
       .join("");
+
+    body.querySelectorAll("[data-force-end]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("End this shift now? The member will be DMed.")) return;
+        btn.disabled = true;
+        await api(`/api/communities/${communityId}/admin/active/${btn.dataset.forceEnd}/force-end`, { method: "POST" });
+        await loadActive();
+      });
+    });
   }
 
   async function loadRoster() {
@@ -88,8 +106,7 @@
         const hours = r.total_seconds / 3600;
         let quotaCell = "—";
         if (quotaHours != null) {
-          const met = hours >= quotaHours;
-          quotaCell = `<span class="pill ${met ? "good" : "warn"}">${met ? "Met" : "Below"}</span> ${hours.toFixed(1)}/${quotaHours}h`;
+          quotaCell = `<span class="pill ${r.quota_met ? "good" : "warn"}">${r.quota_met ? "Met" : "Below"}</span> ${(r.quota_seconds / 3600).toFixed(1)}/${quotaHours}h`;
         }
         return `<tr>
           <td>${esc(r.username || r.discord_id)}</td>
@@ -104,8 +121,10 @@
   async function loadMembers() {
     const res = await api(`/api/communities/${communityId}/admin/members`);
     members = res.ok ? await res.json() : [];
-    const select = document.getElementById("admin-add-member");
-    select.innerHTML = members.map((m) => `<option value="${m.discord_id}">${esc(m.username)}</option>`).join("");
+    const options = members.map((m) => `<option value="${m.discord_id}">${esc(m.username)}</option>`).join("");
+    document.getElementById("admin-add-member").innerHTML = options;
+    document.getElementById("admin-remove-member").innerHTML = options;
+    document.getElementById("reminder-send-member").innerHTML = options;
   }
 
   async function loadShiftTypes() {
@@ -160,6 +179,8 @@
     document.getElementById("shifttype-role").innerHTML = `<option value="">Everyone</option>${roleOptions()}`;
   }
 
+  const PERIOD_LABEL = { weekly: "Weekly", biweekly: "Biweekly", monthly: "Monthly" };
+
   async function loadQuotas() {
     const res = await api(`/api/communities/${communityId}/admin/quotas`);
     const quotas = res.ok ? await res.json() : [];
@@ -169,6 +190,7 @@
         (q) => `<tr>
           <td>${esc(q.shift_type_name ?? "Overall")}</td>
           <td class="mono">${q.hours_required}h</td>
+          <td>${PERIOD_LABEL[q.period] || "Weekly"}</td>
           <td><button class="btn btn-danger" data-remove-quota="${q.shift_type_id ?? "overall"}">Remove</button></td>
         </tr>`
       )
@@ -219,6 +241,222 @@
     document.getElementById("perm-role").innerHTML = roleOptions();
   }
 
+  // ---------------------------------------------------------------------
+  // Week schedule
+  // ---------------------------------------------------------------------
+
+  function renderSchedule() {
+    document.getElementById("schedule-day").value = String(community.weekStartDay ?? 1);
+    document.getElementById("schedule-hour").innerHTML = hourOptions(community.weekStartHour ?? 0);
+  }
+
+  function wireSchedule() {
+    document.getElementById("schedule-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const weekStartDay = Number(document.getElementById("schedule-day").value);
+      const weekStartHour = Number(document.getElementById("schedule-hour").value);
+      const msg = document.getElementById("schedule-message");
+
+      const res = await api(`/api/communities/${communityId}/admin/schedule`, {
+        method: "POST",
+        body: JSON.stringify({ weekStartDay, weekStartHour }),
+      });
+      msg.style.display = "block";
+      msg.style.color = res.ok ? "var(--good)" : "var(--warn)";
+      msg.textContent = res.ok ? "Schedule saved." : "Couldn't save schedule.";
+    });
+
+    document.getElementById("force-end-week-btn").addEventListener("click", async () => {
+      if (!confirm("End the current week now and start a fresh one? This saves a report of the week so far.")) return;
+      await api(`/api/communities/${communityId}/admin/schedule/force-end-week`, { method: "POST" });
+      await Promise.all([loadRoster(), loadCommunityAndRefresh()]);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Quota reminders
+  // ---------------------------------------------------------------------
+
+  function renderReminders() {
+    const daySelect = document.getElementById("reminder-day");
+    daySelect.value = community.reminderDay == null ? "" : String(community.reminderDay);
+    document.getElementById("reminder-hour").innerHTML = hourOptions(community.reminderHour ?? 0);
+    document.getElementById("reminder-threshold").value = community.reminderThresholdHours ?? "";
+  }
+
+  function wireReminders() {
+    document.getElementById("reminders-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const dayVal = document.getElementById("reminder-day").value;
+      const reminderHour = Number(document.getElementById("reminder-hour").value);
+      const reminderThresholdHours = Number(document.getElementById("reminder-threshold").value || 0);
+      const msg = document.getElementById("reminders-message");
+
+      const res = await api(`/api/communities/${communityId}/admin/reminders`, {
+        method: "POST",
+        body: JSON.stringify({ reminderDay: dayVal === "" ? null : Number(dayVal), reminderHour, reminderThresholdHours }),
+      });
+      msg.style.display = "block";
+      msg.style.color = res.ok ? "var(--good)" : "var(--warn)";
+      msg.textContent = res.ok ? "Reminder settings saved." : "Couldn't save reminder settings.";
+    });
+
+    document.getElementById("reminder-send-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const discordId = document.getElementById("reminder-send-member").value;
+      const msg = document.getElementById("reminder-send-message");
+
+      const res = await api(`/api/communities/${communityId}/admin/reminders/send`, {
+        method: "POST",
+        body: JSON.stringify({ discordId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      msg.style.display = "block";
+      if (res.ok && body.sent) {
+        msg.style.color = "var(--good)";
+        msg.textContent = "Reminder sent.";
+      } else {
+        msg.style.color = "var(--warn)";
+        msg.textContent = "Nothing to remind — they may not have an overall quota, or already met it.";
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // On-shift roles
+  // ---------------------------------------------------------------------
+
+  function renderRoleConfig() {
+    document.getElementById("role-onshift").innerHTML = `<option value="">None</option>${roleOptions(community.onShiftRoleId)}`;
+    document.getElementById("role-supervisor").innerHTML = `<option value="">None</option>${roleOptions(community.supervisorCheckRoleId)}`;
+    document.getElementById("role-activesupervisor").innerHTML = `<option value="">None</option>${roleOptions(community.activeSupervisorRoleId)}`;
+    document.getElementById("role-loa").innerHTML = `<option value="">None</option>${roleOptions(community.loaRoleId)}`;
+  }
+
+  function wireRoleConfig() {
+    document.getElementById("role-config-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("role-config-message");
+      const res = await api(`/api/communities/${communityId}/admin/role-config`, {
+        method: "POST",
+        body: JSON.stringify({
+          onShiftRoleId: document.getElementById("role-onshift").value || null,
+          supervisorCheckRoleId: document.getElementById("role-supervisor").value || null,
+          activeSupervisorRoleId: document.getElementById("role-activesupervisor").value || null,
+          loaRoleId: document.getElementById("role-loa").value || null,
+        }),
+      });
+      msg.style.display = "block";
+      msg.style.color = res.ok ? "var(--good)" : "var(--warn)";
+      msg.textContent = res.ok ? "Roles saved." : "Couldn't save roles.";
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // LOA requests
+  // ---------------------------------------------------------------------
+
+  function showLoaTab(tab) {
+    document.getElementById("loa-tab-pending").className = tab === "pending" ? "btn" : "btn btn-ghost";
+    document.getElementById("loa-tab-history").className = tab === "history" ? "btn" : "btn btn-ghost";
+    document.getElementById("loa-pending-view").style.display = tab === "pending" ? "" : "none";
+    document.getElementById("loa-history-view").style.display = tab === "history" ? "" : "none";
+  }
+
+  async function loadLoaPending() {
+    const res = await api(`/api/communities/${communityId}/admin/loa/pending`);
+    const requests = res.ok ? await res.json() : [];
+    const body = document.getElementById("loa-pending-body");
+    const empty = document.getElementById("loa-pending-empty");
+
+    if (!requests.length) {
+      body.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    body.innerHTML = requests
+      .map((r) => {
+        const member = members.find((m) => m.discord_id === r.discord_id);
+        return `<tr>
+          <td>${esc(member ? member.username : r.discord_id)}</td>
+          <td>${esc(r.reason)}</td>
+          <td class="mono">${r.duration_days}</td>
+          <td>${new Date(r.submitted_at * 1000).toLocaleDateString()}</td>
+          <td>
+            <button class="btn" data-approve="${r.id}" style="color:var(--good);">Approve</button>
+            <button class="btn btn-danger" data-deny="${r.id}">Deny</button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+
+    body.querySelectorAll("[data-approve]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        const res = await api(`/api/communities/${communityId}/admin/loa/${btn.dataset.approve}/approve`, { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        const warning = document.getElementById("loa-warning");
+        if (body.warning) {
+          warning.style.display = "block";
+          warning.textContent = body.warning;
+        } else {
+          warning.style.display = "none";
+        }
+        await loadLoaPending();
+      });
+    });
+
+    body.querySelectorAll("[data-deny]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        await api(`/api/communities/${communityId}/admin/loa/${btn.dataset.deny}/deny`, { method: "POST" });
+        await loadLoaPending();
+      });
+    });
+  }
+
+  async function loadLoaHistory() {
+    const res = await api(`/api/communities/${communityId}/admin/loa/history`);
+    const requests = res.ok ? await res.json() : [];
+    const body = document.getElementById("loa-history-body");
+    const empty = document.getElementById("loa-history-empty");
+
+    if (!requests.length) {
+      body.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    body.innerHTML = requests
+      .map((r) => {
+        const member = members.find((m) => m.discord_id === r.discord_id);
+        const reviewer = members.find((m) => m.discord_id === r.reviewer_id);
+        return `<tr>
+          <td>${esc(member ? member.username : r.discord_id)}</td>
+          <td><span class="pill ${r.status === "approved" ? "good" : "warn"}">${esc(r.status)}</span></td>
+          <td>${esc(reviewer ? reviewer.username : r.reviewer_id || "—")}</td>
+          <td>${r.reviewed_at ? new Date(r.reviewed_at * 1000).toLocaleDateString() : "—"}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function wireLoa() {
+    document.getElementById("loa-tab-pending").addEventListener("click", () => {
+      showLoaTab("pending");
+      loadLoaPending();
+    });
+    document.getElementById("loa-tab-history").addEventListener("click", () => {
+      showLoaTab("history");
+      loadLoaHistory();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+
   function wireForms() {
     document.getElementById("admin-add-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -246,6 +484,30 @@
       }
     });
 
+    document.getElementById("admin-remove-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const discordId = document.getElementById("admin-remove-member").value;
+      const hours = Number(document.getElementById("admin-remove-hours").value);
+      const msg = document.getElementById("admin-remove-message");
+
+      const res = await api(`/api/communities/${communityId}/admin/shifts/remove`, {
+        method: "POST",
+        body: JSON.stringify({ discordId, hours }),
+      });
+
+      msg.style.display = "block";
+      if (res.ok) {
+        const body = await res.json();
+        msg.style.color = "var(--good)";
+        msg.textContent = `Removed ${body.hoursRemoved.toFixed(2)}h.`;
+        e.target.reset();
+        await loadRoster();
+      } else {
+        msg.style.color = "var(--warn)";
+        msg.textContent = "Couldn't remove time.";
+      }
+    });
+
     document.getElementById("shifttype-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = document.getElementById("shifttype-name").value.trim();
@@ -263,9 +525,10 @@
       e.preventDefault();
       const typeVal = document.getElementById("quota-type").value;
       const hours = Number(document.getElementById("quota-hours").value);
+      const period = document.getElementById("quota-period").value;
       await api(`/api/communities/${communityId}/admin/quotas`, {
         method: "POST",
-        body: JSON.stringify({ shiftTypeId: typeVal ? Number(typeVal) : null, hours }),
+        body: JSON.stringify({ shiftTypeId: typeVal ? Number(typeVal) : null, hours, period }),
       });
       e.target.reset();
       await loadQuotas();
@@ -287,6 +550,11 @@
       await fetch("/auth/logout", { method: "POST" });
       location.href = "/";
     });
+
+    wireSchedule();
+    wireReminders();
+    wireRoleConfig();
+    wireLoa();
   }
 
   function stopPolling() {
@@ -345,17 +613,22 @@
       showState("no-community");
       return;
     }
-    const detail = await detailRes.json();
-    if (!detail.isAdmin) {
+    community = await detailRes.json();
+    if (!community.isAdmin) {
       document.getElementById("billing-banner").style.display = "none";
       showState("denied");
       return;
     }
 
-    renderBillingBanner(detail.subscriptionStatus);
+    renderBillingBanner(community.subscriptionStatus);
     showState("ok");
     await loadRoles();
     await Promise.all([loadActive(), loadRoster(), loadMembers(), loadShiftTypes(), loadQuotas(), loadPermissions()]);
+    renderSchedule();
+    renderReminders();
+    renderRoleConfig();
+    showLoaTab("pending");
+    await loadLoaPending();
 
     pollHandles.push(setInterval(loadActive, 15000));
     pollHandles.push(setInterval(loadRoster, 60000));

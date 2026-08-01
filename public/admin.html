@@ -62,7 +62,7 @@
             <div class="card">
               <table>
                 <thead>
-                  <tr><th>Member</th><th>Type</th><th class="mono">Elapsed</th></tr>
+                  <tr><th>Member</th><th>Type</th><th class="mono">Elapsed</th><th></th></tr>
                 </thead>
                 <tbody id="active-body"></tbody>
               </table>
@@ -98,6 +98,21 @@
           </div>
 
           <div class="section">
+            <div class="section-head"><h2>Remove Time</h2></div>
+            <div class="card">
+              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
+                Removes hours from a member's most recently logged shifts, newest first.
+              </p>
+              <form id="admin-remove-form" class="form-row">
+                <select id="admin-remove-member" required></select>
+                <input type="number" id="admin-remove-hours" min="0.25" step="0.25" placeholder="Hours" required />
+                <button class="btn btn-danger-solid" type="submit">Remove Time</button>
+              </form>
+              <div id="admin-remove-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+            </div>
+          </div>
+
+          <div class="section">
             <div class="section-head"><h2>Shift Types</h2></div>
             <div class="card">
               <table>
@@ -115,19 +130,110 @@
           </div>
 
           <div class="section">
-            <div class="section-head"><h2>Weekly Quotas</h2></div>
+            <div class="section-head"><h2>Quotas</h2></div>
             <div class="card">
               <table>
                 <thead>
-                  <tr><th>Applies To</th><th class="mono">Hours / Week</th><th></th></tr>
+                  <tr><th>Applies To</th><th class="mono">Hours</th><th>Period</th><th></th></tr>
                 </thead>
                 <tbody id="quotas-body"></tbody>
               </table>
               <form id="quota-form" class="form-row">
                 <select id="quota-type"></select>
                 <input type="number" id="quota-hours" min="0" step="0.5" placeholder="Hours" required />
+                <select id="quota-period">
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
                 <button class="btn btn-accent" type="submit">Set Quota</button>
               </form>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Week Schedule</h2></div>
+            <div class="card">
+              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
+                When the weekly quota clock resets, in UTC.
+              </p>
+              <form id="schedule-form" class="form-row">
+                <select id="schedule-day">
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                </select>
+                <select id="schedule-hour"></select>
+                <button class="btn btn-accent" type="submit">Save</button>
+              </form>
+              <div id="schedule-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+              <div style="margin:14px 0; border-top:1px solid var(--hairline);"></div>
+              <button class="btn btn-danger-solid" id="force-end-week-btn">Force End Week Now</button>
+              <p style="margin:8px 0 0; font-size: 12px; color: var(--muted);">
+                Saves a snapshot report of the current week and starts a fresh one immediately.
+              </p>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Quota Reminders</h2></div>
+            <div class="card">
+              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
+                Once a day, members below the threshold get a DM. Leave the day blank to disable.
+              </p>
+              <form id="reminders-form" class="form-row">
+                <select id="reminder-day">
+                  <option value="">Disabled</option>
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                </select>
+                <select id="reminder-hour"></select>
+                <input type="number" id="reminder-threshold" min="0" step="0.5" placeholder="Below hours" />
+                <button class="btn btn-accent" type="submit">Save</button>
+              </form>
+              <div id="reminders-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+              <div style="margin:14px 0; border-top:1px solid var(--hairline);"></div>
+              <div class="quota-row-head"><span class="name">Send one now</span></div>
+              <form id="reminder-send-form" class="form-row">
+                <select id="reminder-send-member"></select>
+                <button class="btn" type="submit">Send Reminder</button>
+              </form>
+              <div id="reminder-send-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>On-Shift Roles</h2></div>
+            <div class="card">
+              <form id="role-config-form">
+                <div class="quota-row">
+                  <div class="quota-row-head"><span class="name">On-Shift Role</span></div>
+                  <select id="role-onshift"><option value="">None</option></select>
+                </div>
+                <div class="quota-row">
+                  <div class="quota-row-head"><span class="name">Supervisor Check Role</span></div>
+                  <select id="role-supervisor"><option value="">None</option></select>
+                </div>
+                <div class="quota-row">
+                  <div class="quota-row-head"><span class="name">Active Supervisor Role</span></div>
+                  <select id="role-activesupervisor"><option value="">None</option></select>
+                </div>
+                <div class="quota-row">
+                  <div class="quota-row-head"><span class="name">LOA Role</span></div>
+                  <select id="role-loa"><option value="">None</option></select>
+                </div>
+                <button class="btn btn-accent" type="submit">Save Roles</button>
+              </form>
+              <div id="role-config-message" style="font-size:13px; margin-top:10px; display:none;"></div>
             </div>
           </div>
 
@@ -150,6 +256,35 @@
                 </select>
                 <button class="btn btn-accent" type="submit">Grant</button>
               </form>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>LOA Requests</h2></div>
+            <div class="card">
+              <div class="controls-row" style="margin-top:0; margin-bottom:14px;">
+                <button class="btn" id="loa-tab-pending" type="button">Pending</button>
+                <button class="btn btn-ghost" id="loa-tab-history" type="button">History</button>
+              </div>
+              <div id="loa-pending-view">
+                <table>
+                  <thead>
+                    <tr><th>Member</th><th>Reason</th><th class="mono">Days</th><th>Submitted</th><th></th></tr>
+                  </thead>
+                  <tbody id="loa-pending-body"></tbody>
+                </table>
+                <div id="loa-pending-empty" class="empty" style="display:none;">No pending requests.</div>
+              </div>
+              <div id="loa-history-view" style="display:none;">
+                <table>
+                  <thead>
+                    <tr><th>Member</th><th>Status</th><th>Reviewer</th><th>Reviewed</th></tr>
+                  </thead>
+                  <tbody id="loa-history-body"></tbody>
+                </table>
+                <div id="loa-history-empty" class="empty" style="display:none;">No history yet.</div>
+              </div>
+              <div id="loa-warning" class="error-banner" style="display:none; margin-top:14px;"></div>
             </div>
           </div>
         </div>

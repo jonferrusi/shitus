@@ -30,16 +30,15 @@ function isPanelComponent(customId) {
 
 function weeklySummaryFields(community, discordId) {
   const totals = db.weeklyTotalsByType(community.id, discordId, db.currentWeekStart(community));
-  const quotas = db.listQuotas(community.id);
-  const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
+  const progress = db.quotaProgressForMember(community, discordId);
+  const progressByType = new Map(progress.map((q) => [q.shiftTypeId, q]));
 
   return totals.map((t) => {
-    const required = quotaByType.get(t.shift_type_id);
-    const hours = t.total_seconds / 3600;
+    const quota = progressByType.get(t.shift_type_id);
     let value = formatDuration(t.total_seconds);
-    if (required) {
-      value += ` / ${required}h`;
-      value += hours >= required ? " ✅ passed" : "";
+    if (quota) {
+      value += ` / ${quota.hoursRequired}h`;
+      value += quota.met ? " ✅ passed" : "";
     }
     return { name: t.shift_type_name, value, inline: true };
   });

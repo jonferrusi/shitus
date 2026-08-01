@@ -18,30 +18,20 @@ function isShiftOnSelect(customId) {
   return customId.startsWith(`${SELECT_PREFIX}:`);
 }
 
+const PERIOD_LABEL = { weekly: "", biweekly: " (biweekly)", monthly: " (monthly)" };
+
 /** Quota progress lines relevant to a given shift type + the overall quota, for one user. */
 function quotaFields(community, discordId, shiftTypeId) {
-  const totals = db.weeklyTotalsByType(community.id, discordId, db.currentWeekStart(community));
-  const quotas = db.listQuotas(community.id);
-  const fields = [];
+  const progress = db.quotaProgressForMember(community, discordId);
 
-  for (const quota of quotas) {
+  return progress
     // Only show the quota for the shift type just clocked off of, plus the overall quota.
-    if (quota.shift_type_id !== null && quota.shift_type_id !== shiftTypeId) continue;
-
-    const seconds = quota.shift_type_id === null
-      ? totals.reduce((sum, t) => sum + t.total_seconds, 0)
-      : totals.find((t) => t.shift_type_id === quota.shift_type_id)?.total_seconds ?? 0;
-
-    const hours = seconds / 3600;
-    const met = hours >= quota.hours_required;
-    fields.push({
-      name: quota.shift_type_name ?? "Overall",
-      value: `${progressBar(seconds, quota.hours_required)}${met ? "  ✅" : ""}`,
+    .filter((q) => q.shiftTypeId === null || q.shiftTypeId === shiftTypeId)
+    .map((q) => ({
+      name: (q.shiftTypeName ?? "Overall") + PERIOD_LABEL[q.period],
+      value: `${progressBar(q.seconds, q.hoursRequired)}${q.met ? "  ✅" : ""}`,
       inline: false,
-    });
-  }
-
-  return fields;
+    }));
 }
 
 async function startShift(interaction, community, shiftTypeId) {

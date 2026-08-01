@@ -148,8 +148,8 @@ mainly useful for the platform operator's own communities):
 
 ## On-shift roles
 
-Configure up to four roles per community with `/admin roles ...` (an Admin
-page section is coming in a later update):
+Configure up to four roles per community with `/admin roles ...` or the
+Admin page's **On-Shift Roles** section:
 
 - **On-Shift Role** — assigned to anyone currently on any shift, removed the
   moment they clock off (including a Force End).
@@ -157,11 +157,39 @@ page section is coming in a later update):
   clocks on, they also get the **Active Supervisor Role**.
 - **Active Supervisor Role** — assigned alongside the On-Shift Role, only for
   members who hold the Supervisor Check Role.
-- **LOA Role** — reserved for the Leave of Absence approval workflow.
+- **LOA Role** — assigned automatically when an LOA request is approved.
 
 All of this is best-effort: if the bot's own role is ranked below the one
 it's trying to assign, or it lacks Manage Roles, the role change is skipped
 and logged rather than blocking the clock-on/off itself.
+
+## Quota periods and the admin panel
+
+Each quota (overall or per shift type) has its own period — Weekly,
+Biweekly (a rolling 14-day window), or Monthly (calendar month, UTC) — set
+from the Admin page's **Quotas** section. Progress against a quota is always
+computed over that quota's own period, everywhere it's shown: the dashboard,
+`/shift on|off|status`, and the roster's Met/Below badge.
+
+The rest of the Admin page: **Live Now** (with a Force End button per
+active shift — ends it, removes on-shift roles, and DMs the member),
+**Remove Time** (deducts hours from a member's most recent shifts, newest
+first), **Week Schedule** (when the quota week resets, plus **Force End
+Week Now** to close the current week early and start a fresh one — this
+saves a snapshot report of the week so far), and **Quota Reminders**
+(a once-a-day DM to anyone below a hours threshold, plus a manual "send one
+now" for a specific member) round out the rest of what `/admin` covers from
+Discord.
+
+## Leave of Absence (LOA)
+
+Members submit a request with `/loa request` (a modal: reason + duration in
+days). Admins review it from the Admin page's **LOA Requests** section:
+**Approve** assigns the configured LOA role and renames the member to
+`LOA | <name>` (capped at 32 characters, original nickname remembered for
+later), while still recording the approval even if the role/rename fails
+(a warning banner explains why). **Deny** just marks it denied. A
+**History** tab shows every past decision and who made it.
 
 ## Clocking on and off
 
