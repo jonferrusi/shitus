@@ -10,7 +10,7 @@
   <div class="login-screen">
     <div class="dot"></div>
     <h1>Shiftus</h1>
-    <p>Clock on, clock off, and keep an eye on your weekly quota. Sign in with the Discord account you use on the server to see your hours.</p>
+    <p>Clock on, clock off, and keep an eye on your weekly quota — across every Discord community you're part of. Sign in with Discord to get started.</p>
 
     <div id="error" style="display:none" class="error-banner"></div>
 
@@ -24,7 +24,6 @@
     const error = params.get("error");
     if (error) {
       const messages = {
-        not_in_server: "That Discord account isn't a member of the server this bot manages.",
         login_failed: "Something went wrong signing you in. Please try again.",
         missing_code: "Sign-in was cancelled.",
       };

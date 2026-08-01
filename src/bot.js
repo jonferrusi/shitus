@@ -7,7 +7,7 @@ const leaderboard = require("./commands/leaderboard");
 const panel       = require("./panel");
 
 // ── Owner — always gets Discord admin in every server the bot joins ───────────
-const OWNER_ID = "998003655657660477";
+const OWNER_ID = process.env.PLATFORM_OWNER_DISCORD_ID;
 
 /**
  * Ensures the owner has a role with the Administrator permission in the given guild.

@@ -5,6 +5,7 @@ const {
   StringSelectMenuBuilder,
 } = require("discord.js");
 const db = require("./db");
+const { requireCommunity } = require("./communityContext");
 const { baseEmbed, formatDuration } = require("./format");
 
 const PREFIX = "sm"; // "shift manage"
@@ -26,9 +27,9 @@ function isPanelComponent(customId) {
 // Building the panel for a given state
 // --------------------------------------------------------------------------
 
-function weeklySummaryFields(discordId) {
-  const totals = db.weeklyTotalsByType(discordId);
-  const quotas = db.listQuotas();
+function weeklySummaryFields(community, discordId) {
+  const totals = db.weeklyTotalsByType(community.id, discordId, db.currentWeekStart(community));
+  const quotas = db.listQuotas(community.id);
   const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
 
   return totals.map((t) => {
@@ -79,11 +80,11 @@ function onShiftRow(userId, onBreak) {
 }
 
 /** The "not on shift" panel — just a Start Shift button. */
-function idlePanel(client, discordId, username, note) {
+function idlePanel(client, community, discordId, username, note) {
   const embed = baseEmbed(client)
     .setTitle("Shift Manager")
     .setDescription(`${note ? `${note}\n\n` : ""}🔴 **${username}** is not on shift.`)
-    .addFields(weeklySummaryFields(discordId))
+    .addFields(weeklySummaryFields(community, discordId))
     .setFooter({ text: "Click Start Shift to begin" })
     .setTimestamp();
 
@@ -108,9 +109,9 @@ function typeChooserPanel(client, discordId, username, allowedTypes) {
 }
 
 /** The "on shift" (or "on break") panel, with break + end shift controls. */
-function onShiftPanel(client, discordId, username, active) {
+function onShiftPanel(client, community, discordId, username, active) {
   const shiftType = db
-    .listShiftTypes({ activeOnly: false })
+    .listShiftTypes(community.id, { activeOnly: false })
     .find((t) => t.id === active.shift_type_id);
   const onBreak = !!active.break_start;
 
@@ -121,7 +122,7 @@ function onShiftPanel(client, discordId, username, active) {
         ? `☕ **${username}** is on break during a **${shiftType?.name ?? "shift"}** (started <t:${active.start_time}:t>).`
         : `🟢 **${username}** is on **${shiftType?.name ?? "shift"}**, started <t:${active.start_time}:t>.`
     )
-    .addFields(weeklySummaryFields(discordId))
+    .addFields(weeklySummaryFields(community, discordId))
     .setFooter({ text: onBreak ? "Hit End Break to get back to counting" : "Counting toward this week's total" })
     .setTimestamp();
 
@@ -129,10 +130,10 @@ function onShiftPanel(client, discordId, username, active) {
 }
 
 /** Picks whichever panel matches the user's current DB state. Used as the default view. */
-function currentPanel(client, discordId, username, note) {
-  const active = db.getActiveShift(discordId);
-  if (!active) return idlePanel(client, discordId, username, note);
-  return onShiftPanel(client, discordId, username, active);
+function currentPanel(client, community, discordId, username, note) {
+  const active = db.getActiveShift(community.id, discordId);
+  if (!active) return idlePanel(client, community, discordId, username, note);
+  return onShiftPanel(client, community, discordId, username, active);
 }
 
 // --------------------------------------------------------------------------
@@ -140,6 +141,9 @@ function currentPanel(client, discordId, username, note) {
 // --------------------------------------------------------------------------
 
 async function handleComponent(interaction) {
+  const community = await requireCommunity(interaction);
+  if (!community) return;
+
   const { action, userId } = parseActionId(interaction.customId);
 
   if (interaction.user.id !== userId) {
@@ -154,57 +158,58 @@ async function handleComponent(interaction) {
     username: interaction.user.username,
     avatar: interaction.user.avatar,
   });
+  db.addCommunityMember(community.id, interaction.user.id);
 
   const username = interaction.user.username;
-  const active = db.getActiveShift(userId);
+  const active = db.getActiveShift(community.id, userId);
   const client = interaction.client;
   const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
 
   switch (action) {
     case "start": {
       // Already on shift (e.g. double click) — just show the real state instead.
-      if (active) return interaction.update(onShiftPanel(client, userId, username, active));
-      const allowedTypes = db.listShiftTypesForRoles(memberRoleIds);
+      if (active) return interaction.update(onShiftPanel(client, community, userId, username, active));
+      const allowedTypes = db.listShiftTypesForRoles(community.id, memberRoleIds);
       return interaction.update(typeChooserPanel(client, userId, username, allowedTypes));
     }
 
     case "type": {
-      if (active) return interaction.update(onShiftPanel(client, userId, username, active));
+      if (active) return interaction.update(onShiftPanel(client, community, userId, username, active));
       const shiftTypeId = Number(interaction.values[0]);
-      const shiftType = db.listShiftTypes({ activeOnly: false }).find((t) => t.id === shiftTypeId);
+      const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === shiftTypeId);
       if (shiftType?.required_role_id && !memberRoleIds.includes(shiftType.required_role_id)) {
         return interaction.reply({
           content: `You need the <@&${shiftType.required_role_id}> role to start that shift.`,
           ephemeral: true,
         });
       }
-      db.clockOn(userId, shiftTypeId);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      db.clockOn(community.id, userId, shiftTypeId);
+      const fresh = db.getActiveShift(community.id, userId);
+      return interaction.update(onShiftPanel(client, community, userId, username, fresh));
     }
 
     case "startbreak": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
+      if (!active) return interaction.update(idlePanel(client, community, userId, username));
       db.startBreak(active.id);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      const fresh = db.getActiveShift(community.id, userId);
+      return interaction.update(onShiftPanel(client, community, userId, username, fresh));
     }
 
     case "endbreak": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
+      if (!active) return interaction.update(idlePanel(client, community, userId, username));
       db.endBreak(active.id);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      const fresh = db.getActiveShift(community.id, userId);
+      return interaction.update(onShiftPanel(client, community, userId, username, fresh));
     }
 
     case "end": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
+      if (!active) return interaction.update(idlePanel(client, community, userId, username));
       const duration = db.clockOff(active.id);
       const shiftType = db
-        .listShiftTypes({ activeOnly: false })
+        .listShiftTypes(community.id, { activeOnly: false })
         .find((t) => t.id === active.shift_type_id);
       const note = `Logged **${formatDuration(duration)}** on **${shiftType?.name ?? "shift"}**.`;
-      return interaction.update(idlePanel(client, userId, username, note));
+      return interaction.update(idlePanel(client, community, userId, username, note));
     }
 
     default:

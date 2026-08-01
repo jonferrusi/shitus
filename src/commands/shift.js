@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
 } = require("discord.js");
 const db = require("../db");
+const { getCommunity, requireCommunity } = require("../communityContext");
 const { baseEmbed, formatDuration, progressBar, GREEN, RED, GOLD, SPACER } = require("../format");
 
 const SELECT_PREFIX = "shifton"; // "shift on" — distinct from panel.js's "sm:" prefix
@@ -17,9 +18,9 @@ function isShiftOnSelect(customId) {
 }
 
 /** Quota progress lines relevant to a given shift type + the overall quota, for one user. */
-function quotaFields(discordId, shiftTypeId) {
-  const totals = db.weeklyTotalsByType(discordId);
-  const quotas = db.listQuotas();
+function quotaFields(community, discordId, shiftTypeId) {
+  const totals = db.weeklyTotalsByType(community.id, discordId, db.currentWeekStart(community));
+  const quotas = db.listQuotas(community.id);
   const fields = [];
 
   for (const quota of quotas) {
@@ -42,8 +43,8 @@ function quotaFields(discordId, shiftTypeId) {
   return fields;
 }
 
-async function startShift(interaction, shiftTypeId) {
-  const shiftType = db.listShiftTypes({ activeOnly: false }).find((t) => t.id === shiftTypeId);
+async function startShift(interaction, community, shiftTypeId) {
+  const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === shiftTypeId);
   if (!shiftType) {
     return interaction.reply({ content: "That shift type doesn't exist anymore.", ephemeral: true });
   }
@@ -56,7 +57,7 @@ async function startShift(interaction, shiftTypeId) {
     });
   }
 
-  db.clockOn(interaction.user.id, shiftType.id);
+  db.clockOn(community.id, interaction.user.id, shiftType.id);
 
   const embed = baseEmbed(interaction.client, GREEN)
     .setTitle("Shift Started")
@@ -90,23 +91,30 @@ module.exports = {
     .addSubcommand((sub) => sub.setName("status").setDescription("Check your current shift status")),
 
   async autocomplete(interaction) {
+    const community = getCommunity(interaction);
+    if (!community) return interaction.respond([]);
+
     const focused = interaction.options.getFocused().toLowerCase();
     const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-    const types = db.listShiftTypesForRoles(memberRoleIds);
+    const types = db.listShiftTypesForRoles(community.id, memberRoleIds);
     const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
     await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
   },
 
   async execute(interaction) {
+    const community = await requireCommunity(interaction);
+    if (!community) return;
+
     db.upsertUser({
       discord_id: interaction.user.id,
       username: interaction.user.username,
       avatar: interaction.user.avatar,
     });
+    db.addCommunityMember(community.id, interaction.user.id);
 
     const sub = interaction.options.getSubcommand();
     const discordId = interaction.user.id;
-    const active = db.getActiveShift(discordId);
+    const active = db.getActiveShift(community.id, discordId);
 
     if (sub === "on") {
       if (active) {
@@ -114,10 +122,10 @@ module.exports = {
       }
 
       const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-      const allowedTypes = db.listShiftTypesForRoles(memberRoleIds);
+      const allowedTypes = db.listShiftTypesForRoles(community.id, memberRoleIds);
 
       if (allowedTypes.length === 0) {
-        const anyTypes = db.listShiftTypes().length > 0;
+        const anyTypes = db.listShiftTypes(community.id).length > 0;
         const embed = baseEmbed(interaction.client, RED)
           .setTitle("Can't Clock On")
           .setDescription(
@@ -137,11 +145,11 @@ module.exports = {
             ephemeral: true,
           });
         }
-        return startShift(interaction, shiftType.id);
+        return startShift(interaction, community, shiftType.id);
       }
 
       if (allowedTypes.length === 1) {
-        return startShift(interaction, allowedTypes[0].id);
+        return startShift(interaction, community, allowedTypes[0].id);
       }
 
       const menu = new StringSelectMenuBuilder()
@@ -162,10 +170,10 @@ module.exports = {
         return interaction.reply({ content: "You're not on shift right now.", ephemeral: true });
       }
 
-      const shiftType = db.listShiftTypes({ activeOnly: false }).find((t) => t.id === active.shift_type_id);
+      const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === active.shift_type_id);
       const duration = db.clockOff(active.id);
 
-      const fields = quotaFields(discordId, active.shift_type_id);
+      const fields = quotaFields(community, discordId, active.shift_type_id);
 
       const embed = baseEmbed(interaction.client)
         .setTitle("Shift Ended")
@@ -204,9 +212,9 @@ module.exports = {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
-      const shiftType = db.listShiftTypes({ activeOnly: false }).find((t) => t.id === active.shift_type_id);
+      const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === active.shift_type_id);
       const onBreak = !!active.break_start;
-      const fields = quotaFields(discordId, active.shift_type_id);
+      const fields = quotaFields(community, discordId, active.shift_type_id);
 
       const embed = baseEmbed(interaction.client)
         .setTitle("Shift Status")
@@ -227,7 +235,9 @@ module.exports = {
     if (interaction.user.id !== userId) {
       return interaction.reply({ content: "This isn't your shift prompt — run `/shift on` yourself.", ephemeral: true });
     }
+    const community = await requireCommunity(interaction);
+    if (!community) return;
     const shiftTypeId = Number(interaction.values[0]);
-    return startShift(interaction, shiftTypeId);
+    return startShift(interaction, community, shiftTypeId);
   },
 };

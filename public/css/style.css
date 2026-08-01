@@ -66,7 +66,24 @@ a { color: inherit; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 0 10px;
-  margin-bottom: 30px;
+  margin-bottom: 18px;
+}
+
+.community-switch {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px;
+  margin-bottom: 12px;
+}
+.community-switch select {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  padding: 7px 8px;
+}
+.community-switch .btn {
+  padding: 7px 11px;
+  line-height: 1;
 }
 
 .sidebar-brand .dot {

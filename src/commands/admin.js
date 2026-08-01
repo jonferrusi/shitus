@@ -1,14 +1,12 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const db = require("../db");
-const { baseEmbed, BLUE, GOLD, GREEN, RED, SPACER } = require("../format");
+const { getCommunity, requireCommunity } = require("../communityContext");
+const { baseEmbed, GOLD, GREEN, RED, SPACER } = require("../format");
 
-// Owner ID — always has full admin access regardless of Discord roles.
-const OWNER_IDS = new Set(["998003655657660477"]);
-
-function isAdmin(interaction) {
-  if (OWNER_IDS.has(interaction.user.id)) return true;
+function isAdmin(interaction, community) {
+  if (interaction.user.id === process.env.PLATFORM_OWNER_DISCORD_ID) return true;
   if (interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-  const adminRoleIds = db.effectiveRoleIds("admin");
+  const adminRoleIds = db.effectiveRoleIds(community.id, "admin");
   return interaction.member.roles.cache.some((r) => adminRoleIds.has(r.id));
 }
 
@@ -113,14 +111,20 @@ module.exports = {
     ),
 
   async autocomplete(interaction) {
+    const community = getCommunity(interaction);
+    if (!community) return interaction.respond([]);
+
     const focused = interaction.options.getFocused().toLowerCase();
-    const types = db.listShiftTypes();
+    const types = db.listShiftTypes(community.id);
     const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
     await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
   },
 
   async execute(interaction) {
-    if (!isAdmin(interaction)) {
+    const community = await requireCommunity(interaction);
+    if (!community) return;
+
+    if (!isAdmin(interaction, community)) {
       const embed = baseEmbed(interaction.client, RED)
         .setTitle("Access Denied")
         .setDescription("You don't have permission to use admin commands.");
@@ -131,31 +135,31 @@ module.exports = {
     const sub   = interaction.options.getSubcommand();
 
     if (group === "shifttype") {
-      if (sub === "add")      return shiftTypeAdd(interaction);
-      if (sub === "remove")   return shiftTypeRemove(interaction);
-      if (sub === "restrict") return shiftTypeRestrict(interaction);
-      if (sub === "list")     return shiftTypeList(interaction);
+      if (sub === "add")      return shiftTypeAdd(interaction, community);
+      if (sub === "remove")   return shiftTypeRemove(interaction, community);
+      if (sub === "restrict") return shiftTypeRestrict(interaction, community);
+      if (sub === "list")     return shiftTypeList(interaction, community);
     }
 
     if (group === "quota") {
-      if (sub === "set")  return quotaSet(interaction);
-      if (sub === "list") return quotaList(interaction);
+      if (sub === "set")  return quotaSet(interaction, community);
+      if (sub === "list") return quotaList(interaction, community);
     }
 
     if (group === "permissions") {
-      if (sub === "add")    return permissionsAdd(interaction);
-      if (sub === "remove") return permissionsRemove(interaction);
-      if (sub === "list")   return permissionsList(interaction);
+      if (sub === "add")    return permissionsAdd(interaction, community);
+      if (sub === "remove") return permissionsRemove(interaction, community);
+      if (sub === "list")   return permissionsList(interaction, community);
     }
   },
 };
 
 // ── Shift Types ───────────────────────────────────────────────────────────────
 
-async function shiftTypeAdd(interaction) {
+async function shiftTypeAdd(interaction, community) {
   const name = interaction.options.getString("name", true).trim();
   const role = interaction.options.getRole("role");
-  db.addShiftType(name, role?.id ?? null);
+  db.addShiftType(community.id, name, role?.id ?? null);
 
   const embed = baseEmbed(interaction.client, GREEN)
     .setTitle("Shift Type Added")
@@ -168,9 +172,9 @@ async function shiftTypeAdd(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function shiftTypeRemove(interaction) {
+async function shiftTypeRemove(interaction, community) {
   const name   = interaction.options.getString("name", true).trim();
-  const result = db.removeShiftType(name);
+  const result = db.removeShiftType(community.id, name);
 
   if (result.changes === 0) {
     const embed = baseEmbed(interaction.client, RED)
@@ -187,10 +191,10 @@ async function shiftTypeRemove(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function shiftTypeRestrict(interaction) {
+async function shiftTypeRestrict(interaction, community) {
   const name      = interaction.options.getString("name", true).trim();
   const role      = interaction.options.getRole("role");
-  const shiftType = db.getShiftTypeByName(name);
+  const shiftType = db.getShiftTypeByName(community.id, name);
 
   if (!shiftType) {
     const embed = baseEmbed(interaction.client, RED)
@@ -199,7 +203,7 @@ async function shiftTypeRestrict(interaction) {
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  db.setShiftTypeRequiredRole(name, role?.id ?? null);
+  db.setShiftTypeRequiredRole(community.id, name, role?.id ?? null);
 
   const embed = baseEmbed(interaction.client, GREEN)
     .setTitle("Shift Type Updated")
@@ -212,8 +216,8 @@ async function shiftTypeRestrict(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function shiftTypeList(interaction) {
-  const types = db.listShiftTypes();
+async function shiftTypeList(interaction, community) {
+  const types = db.listShiftTypes(community.id);
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Shift Types")
@@ -239,13 +243,13 @@ async function shiftTypeList(interaction) {
 
 // ── Quotas ────────────────────────────────────────────────────────────────────
 
-async function quotaSet(interaction) {
+async function quotaSet(interaction, community) {
   const hours    = interaction.options.getNumber("hours", true);
   const typeName = interaction.options.getString("type");
 
   let shiftTypeId = null;
   if (typeName) {
-    const shiftType = db.getShiftTypeByName(typeName);
+    const shiftType = db.getShiftTypeByName(community.id, typeName);
     if (!shiftType) {
       const embed = baseEmbed(interaction.client, RED)
         .setTitle("Not Found")
@@ -255,7 +259,7 @@ async function quotaSet(interaction) {
     shiftTypeId = shiftType.id;
   }
 
-  db.setQuota(shiftTypeId, hours);
+  db.setQuota(community.id, shiftTypeId, hours);
 
   const embed = baseEmbed(interaction.client, GREEN)
     .setTitle("Quota Updated")
@@ -268,8 +272,8 @@ async function quotaSet(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function quotaList(interaction) {
-  const quotas = db.listQuotas();
+async function quotaList(interaction, community) {
+  const quotas = db.listQuotas(community.id);
 
   const embed = baseEmbed(interaction.client, GOLD)
     .setTitle("Weekly Quotas")
@@ -291,10 +295,10 @@ async function quotaList(interaction) {
 
 // ── Permissions ───────────────────────────────────────────────────────────────
 
-async function permissionsAdd(interaction) {
+async function permissionsAdd(interaction, community) {
   const role = interaction.options.getRole("role", true);
   const type = interaction.options.getString("type", true);
-  db.addRolePermission(role.id, type);
+  db.addRolePermission(community.id, role.id, type);
 
   const label = type === "admin" ? "Admin" : "Add Time";
   const embed = baseEmbed(interaction.client, GREEN)
@@ -308,10 +312,10 @@ async function permissionsAdd(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function permissionsRemove(interaction) {
+async function permissionsRemove(interaction, community) {
   const role = interaction.options.getRole("role", true);
   const type = interaction.options.getString("type", true);
-  db.removeRolePermission(role.id, type);
+  db.removeRolePermission(community.id, role.id, type);
 
   const label = type === "admin" ? "Admin" : "Add Time";
   const embed = baseEmbed(interaction.client)
@@ -322,9 +326,9 @@ async function permissionsRemove(interaction) {
   return interaction.reply({ embeds: [embed] });
 }
 
-async function permissionsList(interaction) {
-  const adminRoles   = db.listRolePermissions("admin");
-  const addTimeRoles = db.listRolePermissions("add_time");
+async function permissionsList(interaction, community) {
+  const adminRoles   = db.listRolePermissions(community.id, "admin");
+  const addTimeRoles = db.listRolePermissions(community.id, "add_time");
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Permissions")

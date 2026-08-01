@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
 } = require("discord.js");
 const db = require("../db");
+const { requireCommunity } = require("../communityContext");
 const { baseEmbed, formatDuration, progressBar, GOLD, SPACER } = require("../format");
 
 const SELECT_ID    = "shiftleaderboard-select";
@@ -11,8 +12,8 @@ const OVERALL_VALUE = "overall";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-function buildSelectRow(selectedValue) {
-  const types = db.listShiftTypes();
+function buildSelectRow(community, selectedValue) {
+  const types = db.listShiftTypes(community.id);
   const menu  = new StringSelectMenuBuilder()
     .setCustomId(SELECT_ID)
     .setPlaceholder("Choose a shift type…")
@@ -26,10 +27,10 @@ function buildSelectRow(selectedValue) {
   return new ActionRowBuilder().addComponents(menu);
 }
 
-function buildLeaderboardEmbed(client, shiftTypeId, typeName) {
-  const weekStart  = db.currentWeekStart();
-  const rows       = db.weeklyLeaderboard(shiftTypeId, weekStart);
-  const quota      = db.listQuotas().find((q) => q.shift_type_id === shiftTypeId);
+function buildLeaderboardEmbed(client, community, shiftTypeId, typeName) {
+  const weekStart  = db.currentWeekStart(community);
+  const rows       = db.weeklyLeaderboard(community.id, shiftTypeId, weekStart);
+  const quota      = db.listQuotas(community.id).find((q) => q.shift_type_id === shiftTypeId);
   const quotaHours = quota?.hours_required ?? null;
 
   const embed = baseEmbed(client, GOLD)
@@ -88,7 +89,10 @@ module.exports = {
     .setDescription("See who has the most shift hours this week"),
 
   async execute(interaction) {
-    const row = buildSelectRow();
+    const community = await requireCommunity(interaction);
+    if (!community) return;
+
+    const row = buildSelectRow(community);
     const embed = baseEmbed(interaction.client, GOLD)
       .setTitle("Weekly Leaderboard")
       .setDescription("Select a shift type below to see this week's rankings.");
@@ -97,14 +101,17 @@ module.exports = {
   },
 
   async handleSelect(interaction) {
+    const community = await requireCommunity(interaction);
+    if (!community) return;
+
     const value       = interaction.values[0];
     const shiftTypeId = value === OVERALL_VALUE ? null : Number(value);
     const typeName    = value === OVERALL_VALUE
       ? "Overall"
-      : db.listShiftTypes({ activeOnly: false }).find((t) => String(t.id) === value)?.name ?? "Unknown";
+      : db.listShiftTypes(community.id, { activeOnly: false }).find((t) => String(t.id) === value)?.name ?? "Unknown";
 
-    const embed = buildLeaderboardEmbed(interaction.client, shiftTypeId, typeName);
-    const row   = buildSelectRow(value);
+    const embed = buildLeaderboardEmbed(interaction.client, community, shiftTypeId, typeName);
+    const row   = buildSelectRow(community, value);
 
     await interaction.update({ embeds: [embed], components: [row] });
   },

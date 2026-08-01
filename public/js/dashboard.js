@@ -1,47 +1,14 @@
 (function () {
   "use strict";
 
+  const { esc, formatDuration, formatClock, api, setSelectedCommunityId, loadCommunities, renderCommunitySwitcher } =
+    window.Shiftus;
+
   let me = null;
+  let communityId = null;
   let myTypes = [];
   let activeShift = null; // raw shift row from /api/summary, or null
   let timerInterval = null;
-
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s ?? "";
-    return d.innerHTML;
-  }
-
-  function formatDuration(totalSeconds) {
-    const s = Math.max(0, Math.floor(totalSeconds));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  }
-
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
-
-  function formatClock(totalSeconds) {
-    const s = Math.max(0, Math.floor(totalSeconds));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
-  }
-
-  async function api(path, options) {
-    const res = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    if (res.status === 401) {
-      location.href = "/";
-      throw new Error("not authenticated");
-    }
-    return res;
-  }
 
   async function loadMe() {
     const res = await api("/api/me");
@@ -51,18 +18,134 @@
       ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/0.png`;
     document.getElementById("username").textContent = me.username;
-    if (me.isAdmin) {
-      const link = document.getElementById("admin-link");
-      if (link) link.style.display = "";
-    }
-    if (me.canAddTime) {
-      const section = document.getElementById("log-time-section");
-      if (section) section.style.display = "";
-    }
   }
 
+  // ---------------------------------------------------------------------
+  // Community switcher + join/create
+  // ---------------------------------------------------------------------
+
+  async function refreshCommunitySwitcher() {
+    const communities = await loadCommunities();
+    const select = document.getElementById("community-select");
+
+    if (!communities.length) {
+      document.getElementById("empty-state").style.display = "";
+      document.getElementById("app-content").style.display = "none";
+      document.getElementById("admin-link").style.display = "none";
+      select.innerHTML = "";
+      communityId = null;
+      return;
+    }
+
+    document.getElementById("empty-state").style.display = "none";
+    document.getElementById("app-content").style.display = "";
+
+    communityId = renderCommunitySwitcher(select, communities, async (newId) => {
+      communityId = newId;
+      await loadCommunityAndRefresh();
+    });
+
+    await loadCommunityAndRefresh();
+  }
+
+  async function loadCommunityAndRefresh() {
+    if (!communityId) return;
+    const res = await api(`/api/communities/${communityId}`);
+    if (!res.ok) return;
+    const detail = await res.json();
+    document.getElementById("admin-link").style.display = detail.isAdmin ? "" : "none";
+    const logSection = document.getElementById("log-time-section");
+    if (logSection) logSection.style.display = detail.canAddTime ? "" : "none";
+
+    await loadMyTypes();
+    await refreshAll();
+  }
+
+  function wireAddCommunityPanel() {
+    const btn = document.getElementById("add-community-btn");
+    const panel = document.getElementById("add-community-panel");
+    btn.addEventListener("click", async () => {
+      const showing = panel.style.display !== "none";
+      panel.style.display = showing ? "none" : "";
+      if (!showing) await loadEligibleGuilds();
+    });
+
+    document.getElementById("join-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const slug = document.getElementById("join-slug").value.trim();
+      const msg = document.getElementById("join-message");
+      const res = await api("/api/communities/join", { method: "POST", body: JSON.stringify({ slug }) });
+      const body = await res.json().catch(() => ({}));
+      msg.style.display = "block";
+      if (res.ok) {
+        msg.style.color = "var(--good)";
+        msg.textContent = `Joined ${body.name}.`;
+        setSelectedCommunityId(body.id);
+        e.target.reset();
+        await refreshCommunitySwitcher();
+      } else {
+        msg.style.color = "var(--warn)";
+        msg.textContent =
+          body.error === "invalid_slug"
+            ? "No community found with that invite code."
+            : body.error === "not_a_guild_member"
+            ? "You need to be a member of that Discord server first."
+            : "Couldn't join that community.";
+      }
+    });
+  }
+
+  async function loadEligibleGuilds() {
+    const container = document.getElementById("eligible-guilds");
+    const res = await api("/api/eligible-guilds");
+    const guilds = res.ok ? await res.json() : [];
+
+    if (!guilds.length) {
+      container.innerHTML = `<span class="empty" style="padding:4px 0;">No servers found where you have Manage Server access.</span>`;
+      return;
+    }
+
+    container.innerHTML = guilds
+      .map(
+        (g) => `<div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+          <span>${esc(g.name)}</span>
+          ${
+            g.alreadyLinked
+              ? `<span class="pill neutral">Already linked</span>`
+              : `<button class="btn btn-accent" data-create="${esc(g.id)}">Create</button>`
+          }
+        </div>`
+      )
+      .join("");
+
+    container.querySelectorAll("[data-create]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const msg = document.getElementById("create-message");
+        const res = await api("/api/communities", {
+          method: "POST",
+          body: JSON.stringify({ guildId: btn.dataset.create }),
+        });
+        const body = await res.json().catch(() => ({}));
+        msg.style.display = "block";
+        if (res.ok) {
+          msg.style.color = "var(--good)";
+          msg.textContent = `Created ${body.name}.`;
+          setSelectedCommunityId(body.id);
+          await refreshCommunitySwitcher();
+        } else {
+          msg.style.color = "var(--warn)";
+          msg.textContent = "Couldn't create that community.";
+        }
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Shift clock
+  // ---------------------------------------------------------------------
+
   async function loadMyTypes() {
-    const res = await api("/api/shifttypes/mine");
+    const res = await api(`/api/communities/${communityId}/shifttypes/mine`);
     myTypes = res.ok ? await res.json() : [];
     const select = document.getElementById("manual-type");
     if (select) {
@@ -234,7 +317,7 @@
   }
 
   async function loadSummary() {
-    const res = await api("/api/summary");
+    const res = await api(`/api/communities/${communityId}/summary`);
     if (!res.ok) return;
     const data = await res.json();
     activeShift = data.active;
@@ -245,17 +328,18 @@
   }
 
   async function loadHistory() {
-    const res = await api("/api/history");
+    const res = await api(`/api/communities/${communityId}/history`);
     if (!res.ok) return;
     renderHistory(await res.json());
   }
 
   async function refreshAll() {
+    if (!communityId) return;
     await Promise.all([loadSummary(), loadHistory()]);
   }
 
   async function startShift(shiftTypeId) {
-    const res = await api("/api/shift/start", {
+    const res = await api(`/api/communities/${communityId}/shift/start`, {
       method: "POST",
       body: JSON.stringify({ shiftTypeId }),
     });
@@ -263,17 +347,17 @@
   }
 
   async function endShift() {
-    const res = await api("/api/shift/end", { method: "POST" });
+    const res = await api(`/api/communities/${communityId}/shift/end`, { method: "POST" });
     if (res.ok) await refreshAll();
   }
 
   async function startBreak() {
-    const res = await api("/api/shift/break/start", { method: "POST" });
+    const res = await api(`/api/communities/${communityId}/shift/break/start`, { method: "POST" });
     if (res.ok) await refreshAll();
   }
 
   async function endBreak() {
-    const res = await api("/api/shift/break/end", { method: "POST" });
+    const res = await api(`/api/communities/${communityId}/shift/break/end`, { method: "POST" });
     if (res.ok) await refreshAll();
   }
 
@@ -287,7 +371,7 @@
       const hours = Number(document.getElementById("manual-hours").value);
       const msg = document.getElementById("manual-message");
 
-      const res = await api("/api/shifts/manual", {
+      const res = await api(`/api/communities/${communityId}/shifts/manual`, {
         method: "POST",
         body: JSON.stringify({ shiftTypeId, date, hours }),
       });
@@ -316,10 +400,10 @@
   async function init() {
     await loadMe();
     if (!me) return;
-    await loadMyTypes();
     wireManualForm();
     wireLogout();
-    await refreshAll();
+    wireAddCommunityPanel();
+    await refreshCommunitySwitcher();
     setInterval(refreshAll, 30000);
   }
 

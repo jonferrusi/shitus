@@ -10,6 +10,11 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand"><span class="dot"></span> Shiftus</div>
+
+      <div class="community-switch">
+        <select id="community-select"></select>
+      </div>
+
       <nav class="sidebar-nav">
         <a href="/dashboard.html" class="nav-link">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
@@ -38,6 +43,10 @@
 
         <div id="denied" class="section" style="display:none;">
           <div class="error-banner">You don't have admin access on this server.</div>
+        </div>
+
+        <div id="no-community" class="section" style="display:none;">
+          <div class="empty">No community selected. Join or create one from the Dashboard first.</div>
         </div>
 
         <div id="admin-content">
@@ -141,6 +150,7 @@
     </main>
   </div>
 
+  <script src="/js/common.js"></script>
   <script src="/js/admin.js"></script>
 </body>
 </html>

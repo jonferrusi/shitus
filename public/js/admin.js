@@ -1,22 +1,13 @@
 (function () {
   "use strict";
 
+  const { esc, formatDuration, api, loadCommunities, renderCommunitySwitcher } = window.Shiftus;
+
+  let communityId = null;
   let roles = [];
   let shiftTypes = [];
   let members = [];
-
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s ?? "";
-    return d.innerHTML;
-  }
-
-  function formatDuration(totalSeconds) {
-    const s = Math.max(0, Math.floor(totalSeconds));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  }
+  let pollHandles = [];
 
   function pad2(n) {
     return String(n).padStart(2, "0");
@@ -28,18 +19,6 @@
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
     return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
-  }
-
-  async function api(path, options) {
-    const res = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    if (res.status === 401) {
-      location.href = "/";
-      throw new Error("not authenticated");
-    }
-    return res;
   }
 
   async function loadMe() {
@@ -60,12 +39,12 @@
   }
 
   async function loadRoles() {
-    const res = await api("/api/admin/roles");
+    const res = await api(`/api/communities/${communityId}/admin/roles`);
     roles = res.ok ? await res.json() : [];
   }
 
   async function loadActive() {
-    const res = await api("/api/admin/active");
+    const res = await api(`/api/communities/${communityId}/admin/active`);
     const active = res.ok ? await res.json() : [];
     const body = document.getElementById("active-body");
     const empty = document.getElementById("active-empty");
@@ -92,7 +71,7 @@
   }
 
   async function loadRoster() {
-    const res = await api("/api/admin/roster-v2");
+    const res = await api(`/api/communities/${communityId}/admin/roster`);
     const body = document.getElementById("roster-body");
     const empty = document.getElementById("roster-empty");
     if (!res.ok) return;
@@ -123,14 +102,14 @@
   }
 
   async function loadMembers() {
-    const res = await api("/api/admin/members");
+    const res = await api(`/api/communities/${communityId}/admin/members`);
     members = res.ok ? await res.json() : [];
     const select = document.getElementById("admin-add-member");
     select.innerHTML = members.map((m) => `<option value="${m.discord_id}">${esc(m.username)}</option>`).join("");
   }
 
   async function loadShiftTypes() {
-    const res = await api("/api/admin/shifttypes");
+    const res = await api(`/api/communities/${communityId}/admin/shifttypes`);
     shiftTypes = res.ok ? await res.json() : [];
 
     document.getElementById("admin-add-type").innerHTML = shiftTypes
@@ -162,7 +141,7 @@
 
     body.querySelectorAll("[data-restrict]").forEach((select) => {
       select.addEventListener("change", async () => {
-        await api(`/api/admin/shifttypes/${encodeURIComponent(select.dataset.restrict)}/restrict`, {
+        await api(`/api/communities/${communityId}/admin/shifttypes/${encodeURIComponent(select.dataset.restrict)}/restrict`, {
           method: "POST",
           body: JSON.stringify({ roleId: select.value || null }),
         });
@@ -171,7 +150,9 @@
 
     body.querySelectorAll("[data-remove-type]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        await api(`/api/admin/shifttypes/${encodeURIComponent(btn.dataset.removeType)}`, { method: "DELETE" });
+        await api(`/api/communities/${communityId}/admin/shifttypes/${encodeURIComponent(btn.dataset.removeType)}`, {
+          method: "DELETE",
+        });
         await Promise.all([loadShiftTypes(), loadQuotas()]);
       });
     });
@@ -180,7 +161,7 @@
   }
 
   async function loadQuotas() {
-    const res = await api("/api/admin/quotas");
+    const res = await api(`/api/communities/${communityId}/admin/quotas`);
     const quotas = res.ok ? await res.json() : [];
     const body = document.getElementById("quotas-body");
     body.innerHTML = quotas
@@ -195,14 +176,14 @@
 
     body.querySelectorAll("[data-remove-quota]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        await api(`/api/admin/quotas/${btn.dataset.removeQuota}`, { method: "DELETE" });
+        await api(`/api/communities/${communityId}/admin/quotas/${btn.dataset.removeQuota}`, { method: "DELETE" });
         await loadQuotas();
       });
     });
   }
 
   async function loadPermissions() {
-    const res = await api("/api/admin/permissions");
+    const res = await api(`/api/communities/${communityId}/admin/permissions`);
     if (!res.ok) return;
     const { admin, add_time } = await res.json();
 
@@ -223,7 +204,7 @@
         .join("");
       container.querySelectorAll("[data-revoke]").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          await api("/api/admin/permissions", {
+          await api(`/api/communities/${communityId}/admin/permissions`, {
             method: "DELETE",
             body: JSON.stringify({ roleId: btn.dataset.revoke, type: btn.dataset.type }),
           });
@@ -247,7 +228,7 @@
       const hours = Number(document.getElementById("admin-add-hours").value);
       const msg = document.getElementById("admin-add-message");
 
-      const res = await api("/api/admin/shifts/manual", {
+      const res = await api(`/api/communities/${communityId}/admin/shifts/manual`, {
         method: "POST",
         body: JSON.stringify({ discordId, shiftTypeId, date, hours }),
       });
@@ -270,7 +251,7 @@
       const name = document.getElementById("shifttype-name").value.trim();
       const requiredRoleId = document.getElementById("shifttype-role").value || null;
       if (!name) return;
-      await api("/api/admin/shifttypes", {
+      await api(`/api/communities/${communityId}/admin/shifttypes`, {
         method: "POST",
         body: JSON.stringify({ name, requiredRoleId }),
       });
@@ -282,7 +263,7 @@
       e.preventDefault();
       const typeVal = document.getElementById("quota-type").value;
       const hours = Number(document.getElementById("quota-hours").value);
-      await api("/api/admin/quotas", {
+      await api(`/api/communities/${communityId}/admin/quotas`, {
         method: "POST",
         body: JSON.stringify({ shiftTypeId: typeVal ? Number(typeVal) : null, hours }),
       });
@@ -295,7 +276,7 @@
       const roleId = document.getElementById("perm-role").value;
       const type = document.getElementById("perm-type").value;
       if (!roleId) return;
-      await api("/api/admin/permissions", {
+      await api(`/api/communities/${communityId}/admin/permissions`, {
         method: "POST",
         body: JSON.stringify({ roleId, type }),
       });
@@ -308,22 +289,62 @@
     });
   }
 
+  function stopPolling() {
+    pollHandles.forEach(clearInterval);
+    pollHandles = [];
+  }
+
+  function showState(state) {
+    document.getElementById("denied").style.display = state === "denied" ? "block" : "none";
+    document.getElementById("no-community").style.display = state === "no-community" ? "block" : "none";
+    document.getElementById("admin-content").style.display = state === "ok" ? "" : "none";
+  }
+
+  async function loadCommunityAndRefresh() {
+    stopPolling();
+    if (!communityId) {
+      showState("no-community");
+      return;
+    }
+
+    const detailRes = await api(`/api/communities/${communityId}`);
+    if (!detailRes.ok) {
+      showState("no-community");
+      return;
+    }
+    const detail = await detailRes.json();
+    if (!detail.isAdmin) {
+      showState("denied");
+      return;
+    }
+
+    showState("ok");
+    await loadRoles();
+    await Promise.all([loadActive(), loadRoster(), loadMembers(), loadShiftTypes(), loadQuotas(), loadPermissions()]);
+
+    pollHandles.push(setInterval(loadActive, 15000));
+    pollHandles.push(setInterval(loadRoster, 60000));
+  }
+
   async function init() {
     const me = await loadMe();
     if (!me) return;
 
-    if (!me.isAdmin) {
-      document.getElementById("denied").style.display = "block";
-      document.getElementById("admin-content").style.display = "none";
+    const communities = await loadCommunities();
+    const select = document.getElementById("community-select");
+
+    if (!communities.length) {
+      showState("no-community");
       return;
     }
 
-    await loadRoles();
-    await Promise.all([loadActive(), loadRoster(), loadMembers(), loadShiftTypes(), loadQuotas(), loadPermissions()]);
-    wireForms();
+    communityId = renderCommunitySwitcher(select, communities, async (newId) => {
+      communityId = newId;
+      await loadCommunityAndRefresh();
+    });
 
-    setInterval(loadActive, 15000);
-    setInterval(loadRoster, 60000);
+    wireForms();
+    await loadCommunityAndRefresh();
   }
 
   init();
