@@ -535,6 +535,39 @@ communityRouter.post("/admin/schedule/force-end-week", requireCommunityAdmin, (r
 });
 
 // ---------------------------------------------------------------------------
+// Weekly reports
+// ---------------------------------------------------------------------------
+communityRouter.get("/admin/reports", requireCommunityAdmin, (req, res) => {
+  res.json(db.listWeeklyReports(req.community.id));
+});
+
+communityRouter.get("/admin/reports/current", requireCommunityAdmin, (req, res) => {
+  res.json({ weekStart: db.currentWeekStart(req.community) });
+});
+
+communityRouter.get("/admin/reports/for-date/:date", requireCommunityAdmin, (req, res) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) return res.status(400).json({ error: "invalid_date" });
+  res.json({ weekStart: db.weekStartForDate(req.community, req.params.date) });
+});
+
+communityRouter.get("/admin/reports/:weekStart", requireCommunityAdmin, (req, res) => {
+  const weekStart = Number(req.params.weekStart);
+  if (!Number.isInteger(weekStart)) return res.status(400).json({ error: "invalid_week_start" });
+
+  // Reports generate on-demand from raw shift data even if never pre-saved
+  // (e.g. an old week nobody looked at before) — and get saved once viewed.
+  const report = db.getWeeklyReport(req.community.id, weekStart) || db.generateAndSaveWeeklyReport(req.community, weekStart);
+  res.json(report);
+});
+
+communityRouter.post("/admin/reports/:weekStart/regenerate", requireCommunityAdmin, (req, res) => {
+  const weekStart = Number(req.params.weekStart);
+  if (!Number.isInteger(weekStart)) return res.status(400).json({ error: "invalid_week_start" });
+
+  res.json(db.generateAndSaveWeeklyReport(req.community, weekStart));
+});
+
+// ---------------------------------------------------------------------------
 // On-shift / LOA role configuration
 // ---------------------------------------------------------------------------
 communityRouter.post("/admin/role-config", requireCommunityAdmin, (req, res) => {

@@ -191,6 +191,32 @@ later), while still recording the approval even if the role/rename fails
 (a warning banner explains why). **Deny** just marks it denied. A
 **History** tab shows every past decision and who made it.
 
+## Weekly reports and the background scheduler
+
+A background job (`npm start` runs it in the same process as the bot and
+website — `npm run bot-only`/`web-only` don't) checks every community once
+an hour for two things:
+
+- **Quota reminders** — if it's the configured reminder day and hour, and a
+  reminder hasn't already gone out today, every member below the configured
+  hour threshold gets a DM (hours logged, goal, progress bar, hours still
+  needed). The Admin page's **Quota Reminders** section also has a "send one
+  now" for any individual member, any time, regardless of the schedule.
+- **Week rollover** — once a community's week has moved on, the previous
+  week gets snapshotted into a report automatically (same as clicking Force
+  End Week Now, just triggered by time passing instead of a click).
+
+The Admin page's **Weekly Reports** section lets you pick any past week (or
+jump to one by date) to see a summary — total hours, active members, how
+many met the quota — and the full per-member breakdown. A week that was
+never snapshotted still loads instantly, computed on demand from the raw
+shift data and saved at that point; **Regenerate** recomputes a week after
+backdating or correcting shifts.
+
+Discord API hiccups (rate limits, a DM to someone with DMs closed, an
+interaction that got answered a moment too late) are caught globally and
+logged rather than crashing the process.
+
 ## Clocking on and off
 
 - `/shift on` / `/shift off` / `/shift break` / `/shift status` are the

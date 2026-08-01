@@ -36,4 +36,18 @@ async function sendReminder(community, discordId) {
   return discordApi.sendDM(discordId, content);
 }
 
-module.exports = { buildReminderContent, sendReminder };
+/**
+ * Whether a member is behind enough to be included in the automated daily
+ * pass — below the community's configured hour threshold. Manual "send one
+ * now" from the admin panel skips this and just checks whether the quota's
+ * been met, since it's a deliberate one-off action.
+ */
+function isBelowReminderThreshold(community, discordId) {
+  if (community.reminder_threshold_hours == null) return false;
+  const progress = db.quotaProgressForMember(community, discordId);
+  const overall = progress.find((q) => q.shiftTypeId === null);
+  if (!overall) return false;
+  return overall.seconds / 3600 < community.reminder_threshold_hours;
+}
+
+module.exports = { buildReminderContent, sendReminder, isBelowReminderThreshold };

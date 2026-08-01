@@ -287,6 +287,28 @@
               <div id="loa-warning" class="error-banner" style="display:none; margin-top:14px;"></div>
             </div>
           </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Weekly Reports</h2></div>
+            <div class="card">
+              <div class="form-row" style="margin-top:0;">
+                <select id="report-week-select"></select>
+                <input type="date" id="report-jump-date" />
+                <button class="btn" id="report-jump-btn" type="button">Jump to Week</button>
+                <button class="btn btn-ghost" id="report-regenerate-btn" type="button">Regenerate</button>
+              </div>
+
+              <div id="report-summary" style="margin-top:18px;"></div>
+
+              <table style="margin-top:14px;">
+                <thead>
+                  <tr><th>Member</th><th>Primary Type</th><th class="mono">Hours</th><th>Quota</th></tr>
+                </thead>
+                <tbody id="report-body"></tbody>
+              </table>
+              <div id="report-empty" class="empty" style="display:none;">No hours logged that week.</div>
+            </div>
+          </div>
         </div>
       </div>
     </main>

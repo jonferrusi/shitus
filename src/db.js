@@ -225,10 +225,8 @@ function getWeeklyReport(communityId, weekStart) {
 function forceEndWeek(community) {
   const now = Math.floor(Date.now() / 1000);
   const weekStart = currentWeekStart(community);
-  const roster = rosterWeeklyData(community.id, weekStart);
-  const overallQuota = listQuotas(community.id).find((q) => q.shift_type_id === null);
 
-  saveWeeklyReport(community.id, weekStart, now, { quotaHours: overallQuota?.hours_required ?? null, roster });
+  saveWeeklyReport(community.id, weekStart, now, generateWeeklyReportData(community, weekStart, now));
   db.prepare("UPDATE communities SET week_anchor_override = ? WHERE id = ?").run(now, community.id);
 
   return { weekStart, weekEnd: now };
@@ -302,8 +300,20 @@ function currentWeekStart(community, nowMs = Date.now()) {
   // "Force End Week Now" sets week_anchor_override to the moment it was
   // clicked, so the new week starts exactly then instead of waiting for the
   // next scheduled boundary. Once the next natural boundary passes the
-  // override, the natural calculation takes back over on its own.
-  return Math.max(naturalStart, community?.week_anchor_override ?? 0);
+  // override, the natural calculation takes back over on its own. Only
+  // applies when nowMs is at/after the override itself, so looking up a
+  // week from before the override was set isn't affected by it.
+  const override = community?.week_anchor_override;
+  if (override && override <= Math.floor(nowMs / 1000)) {
+    return Math.max(naturalStart, override);
+  }
+  return naturalStart;
+}
+
+/** The week-start boundary that contains a given YYYY-MM-DD date, for "jump to week" lookups. */
+function weekStartForDate(community, dateStr) {
+  const noonThatDay = new Date(`${dateStr}T12:00:00Z`).getTime();
+  return currentWeekStart(community, noonThatDay);
 }
 
 // ---------------------------------------------------------------------------
@@ -755,6 +765,64 @@ function rosterWeeklyData(communityId, weekStart) {
     .all(weekStart, weekStart, communityId);
 }
 
+/** Same as rosterWeeklyData, but bounded to [weekStart, weekEnd) — for reports on a specific past week. */
+function rosterDataForWindow(communityId, weekStart, weekEnd) {
+  return db
+    .prepare(
+      `SELECT
+         u.discord_id, u.username, u.avatar,
+         COALESCE(SUM(CASE WHEN s.end_time IS NOT NULL AND s.start_time >= ? AND s.start_time < ?
+                           THEN s.duration_seconds ELSE 0 END), 0) AS total_seconds,
+         (SELECT st2.name
+          FROM shifts s2
+          JOIN shift_types st2 ON st2.id = s2.shift_type_id
+          WHERE s2.community_id = cm.community_id
+            AND s2.discord_id = u.discord_id
+            AND s2.end_time IS NOT NULL
+            AND s2.start_time >= ? AND s2.start_time < ?
+          GROUP BY s2.shift_type_id
+          ORDER BY SUM(s2.duration_seconds) DESC
+          LIMIT 1) AS primary_type
+       FROM community_members cm
+       JOIN users u ON u.discord_id = cm.discord_id
+       LEFT JOIN shifts s ON s.discord_id = u.discord_id AND s.community_id = cm.community_id
+       WHERE cm.community_id = ?
+       GROUP BY u.discord_id
+       ORDER BY total_seconds DESC`
+    )
+    .all(weekStart, weekEnd, weekStart, weekEnd, communityId);
+}
+
+/** Computes (but doesn't save) a weekly report's data for a given [weekStart, weekEnd) window. */
+function generateWeeklyReportData(community, weekStart, weekEnd) {
+  const roster = rosterDataForWindow(community.id, weekStart, weekEnd);
+  const overallQuota = listQuotas(community.id).find((q) => q.shift_type_id === null);
+  const withHours = roster.filter((r) => r.total_seconds > 0);
+
+  return {
+    quotaHours: overallQuota?.hours_required ?? null,
+    quotaPeriod: overallQuota?.period ?? null,
+    totalSeconds: withHours.reduce((sum, r) => sum + r.total_seconds, 0),
+    activeMembers: withHours.length,
+    metQuota: overallQuota ? withHours.filter((r) => r.total_seconds / 3600 >= overallQuota.hours_required).length : null,
+    roster,
+  };
+}
+
+/** Generates and persists the report for a specific week (used by regenerate + on-demand viewing). */
+function generateAndSaveWeeklyReport(community, weekStart) {
+  const weekEnd = weekStart + 7 * 86400;
+  const data = generateWeeklyReportData(community, weekStart, weekEnd);
+  saveWeeklyReport(community.id, weekStart, weekEnd, data);
+  return getWeeklyReport(community.id, weekStart);
+}
+
+function listWeeklyReports(communityId) {
+  return db
+    .prepare("SELECT id, week_start, week_end, generated_at FROM weekly_reports WHERE community_id = ? ORDER BY week_start DESC")
+    .all(communityId);
+}
+
 // ---------------------------------------------------------------------------
 // LOA (Leave of Absence) requests
 // ---------------------------------------------------------------------------
@@ -854,6 +922,11 @@ module.exports = {
   weeklyTotalsByType,
   allTimeTotalsByType,
   weeklyLeaderboard,
+  // reports
+  weekStartForDate,
+  generateWeeklyReportData,
+  generateAndSaveWeeklyReport,
+  listWeeklyReports,
   // LOA
   createLoaRequest,
   getLoaRequest,

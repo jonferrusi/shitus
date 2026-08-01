@@ -456,6 +456,111 @@
   }
 
   // ---------------------------------------------------------------------
+  // Weekly reports
+  // ---------------------------------------------------------------------
+
+  function formatWeekLabel(weekStart) {
+    return new Date(weekStart * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  async function loadReportWeekOptions(selectWeekStart) {
+    const select = document.getElementById("report-week-select");
+    const [savedRes, currentRes] = await Promise.all([
+      api(`/api/communities/${communityId}/admin/reports`),
+      api(`/api/communities/${communityId}/admin/reports/current`),
+    ]);
+    const saved = savedRes.ok ? await savedRes.json() : [];
+    const current = currentRes.ok ? await currentRes.json() : null;
+
+    const weekStarts = new Set(saved.map((r) => r.week_start));
+    const options = saved.map((r) => ({ weekStart: r.week_start, label: formatWeekLabel(r.week_start) }));
+    if (current && !weekStarts.has(current.weekStart)) {
+      options.unshift({ weekStart: current.weekStart, label: `${formatWeekLabel(current.weekStart)} (in progress)` });
+    }
+
+    select.innerHTML = options.map((o) => `<option value="${o.weekStart}">${o.label}</option>`).join("");
+    const target = selectWeekStart ?? (current ? current.weekStart : options[0]?.weekStart);
+    if (target != null) select.value = String(target);
+    return target;
+  }
+
+  function renderReport(report) {
+    const summary = document.getElementById("report-summary");
+    const { data } = report;
+    summary.innerHTML = `
+      <div style="display:flex; gap:32px; flex-wrap:wrap;">
+        <div><div class="ticket-label">Total Hours</div><div class="ticket-type" style="font-size:18px;">${formatDuration(data.totalSeconds)}</div></div>
+        <div><div class="ticket-label">Active Members</div><div class="ticket-type" style="font-size:18px;">${data.activeMembers}</div></div>
+        ${
+          data.quotaHours != null
+            ? `<div><div class="ticket-label">Met Quota</div><div class="ticket-type" style="font-size:18px;">${data.metQuota} / ${data.activeMembers}</div></div>`
+            : ""
+        }
+      </div>
+    `;
+
+    const withHours = data.roster.filter((r) => r.total_seconds > 0);
+    const body = document.getElementById("report-body");
+    const empty = document.getElementById("report-empty");
+    if (!withHours.length) {
+      body.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    body.innerHTML = withHours
+      .map((r) => {
+        const hours = r.total_seconds / 3600;
+        let quotaCell = "—";
+        if (data.quotaHours != null) {
+          const met = hours >= data.quotaHours;
+          quotaCell = `<span class="pill ${met ? "good" : "warn"}">${met ? "Met" : "Below"}</span> ${hours.toFixed(1)}/${data.quotaHours}h`;
+        }
+        return `<tr>
+          <td>${esc(r.username || r.discord_id)}</td>
+          <td>${esc(r.primary_type || "—")}</td>
+          <td class="mono">${formatDuration(r.total_seconds)}</td>
+          <td>${quotaCell}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  async function loadReportForWeek(weekStart) {
+    const res = await api(`/api/communities/${communityId}/admin/reports/${weekStart}`);
+    if (!res.ok) return;
+    renderReport(await res.json());
+  }
+
+  function wireReports() {
+    document.getElementById("report-week-select").addEventListener("change", (e) => {
+      loadReportForWeek(e.target.value);
+    });
+
+    document.getElementById("report-jump-btn").addEventListener("click", async () => {
+      const date = document.getElementById("report-jump-date").value;
+      if (!date) return;
+      const res = await api(`/api/communities/${communityId}/admin/reports/for-date/${date}`);
+      if (!res.ok) return;
+      const { weekStart } = await res.json();
+      await loadReportWeekOptions(weekStart);
+      await loadReportForWeek(weekStart);
+    });
+
+    document.getElementById("report-regenerate-btn").addEventListener("click", async () => {
+      const weekStart = document.getElementById("report-week-select").value;
+      if (!weekStart) return;
+      const res = await api(`/api/communities/${communityId}/admin/reports/${weekStart}/regenerate`, { method: "POST" });
+      if (res.ok) renderReport(await res.json());
+    });
+  }
+
+  async function loadReports() {
+    const weekStart = await loadReportWeekOptions();
+    if (weekStart != null) await loadReportForWeek(weekStart);
+  }
+
+  // ---------------------------------------------------------------------
 
   function wireForms() {
     document.getElementById("admin-add-form").addEventListener("submit", async (e) => {
@@ -555,6 +660,7 @@
     wireReminders();
     wireRoleConfig();
     wireLoa();
+    wireReports();
   }
 
   function stopPolling() {
@@ -629,6 +735,7 @@
     renderRoleConfig();
     showLoaTab("pending");
     await loadLoaPending();
+    await loadReports();
 
     pollHandles.push(setInterval(loadActive, 15000));
     pollHandles.push(setInterval(loadRoster, 60000));
