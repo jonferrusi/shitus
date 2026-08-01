@@ -4,7 +4,7 @@ const {
   ActionRowBuilder,
 } = require("discord.js");
 const db = require("../db");
-const { getCommunity, requireCommunity } = require("../communityContext");
+const { getCommunity, requireCommunity, requireActiveSubscription } = require("../communityContext");
 const { baseEmbed, formatDuration, progressBar, GREEN, RED, GOLD, SPACER } = require("../format");
 
 const SELECT_PREFIX = "shifton"; // "shift on" — distinct from panel.js's "sm:" prefix
@@ -44,6 +44,8 @@ function quotaFields(community, discordId, shiftTypeId) {
 }
 
 async function startShift(interaction, community, shiftTypeId) {
+  if (!(await requireActiveSubscription(interaction, community))) return;
+
   const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === shiftTypeId);
   if (!shiftType) {
     return interaction.reply({ content: "That shift type doesn't exist anymore.", ephemeral: true });

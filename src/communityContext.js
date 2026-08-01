@@ -32,4 +32,29 @@ async function requireCommunity(interaction) {
   return null;
 }
 
-module.exports = { getCommunity, requireCommunity };
+const SUBSCRIPTION_REQUIRED_MESSAGE =
+  "This community doesn't have an active Shiftus subscription, so clocking on is disabled. " +
+  "An admin needs to subscribe from the Admin page on the dashboard.";
+
+/**
+ * True if this community is allowed to use shift-logging bot features right
+ * now. If not, replies with a friendly explanation and returns false. Billing
+ * isn't enforced at all if Stripe isn't configured (e.g. local development).
+ *
+ *   if (!(await requireActiveSubscription(interaction, community))) return;
+ */
+async function requireActiveSubscription(interaction, community) {
+  if (!process.env.STRIPE_SECRET_KEY) return true;
+  if (community.subscription_status === "active") return true;
+
+  const embed = baseEmbed(interaction.client, RED).setTitle("Subscription Required").setDescription(SUBSCRIPTION_REQUIRED_MESSAGE);
+  const payload = { embeds: [embed], ephemeral: true };
+
+  if (interaction.isRepliable()) {
+    if (interaction.replied || interaction.deferred) await interaction.followUp(payload);
+    else await interaction.reply(payload);
+  }
+  return false;
+}
+
+module.exports = { getCommunity, requireCommunity, requireActiveSubscription };

@@ -6,8 +6,30 @@ const SqliteSessionStore = require("./sessionStore");
 
 const db = require("./db");
 const discordApi = require("./discordApi");
+const stripeService = require("./stripe");
 
 const app = express();
+
+// Stripe needs the raw, untouched request body to verify webhook
+// signatures, so this route is registered (with its own raw-body parser)
+// before the global express.json() middleware below applies to everything else.
+app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
+  let event;
+  try {
+    event = stripeService.constructEvent(req.body, req.headers["stripe-signature"]);
+  } catch (err) {
+    console.error("[stripe webhook] signature verification failed:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    await stripeService.handleWebhookEvent(event);
+    res.json({ received: true });
+  } catch (err) {
+    console.error("[stripe webhook] handler failed:", err);
+    res.status(500).json({ error: "webhook_handler_failed" });
+  }
+});
 
 app.use(express.json());
 app.use(
@@ -124,6 +146,16 @@ function requireCommunityAdmin(req, res, next) {
 
 function requireCommunityCanAddTime(req, res, next) {
   if (!req.canAddTime) return res.status(403).json({ error: "not_allowed" });
+  next();
+}
+
+/** Gates actual shift-logging actions — not configuration — behind a paid plan. */
+function requireActiveSubscription(req, res, next) {
+  // Billing isn't configured (e.g. local development) — don't enforce it.
+  if (!process.env.STRIPE_SECRET_KEY) return next();
+  if (req.community.subscription_status !== "active") {
+    return res.status(402).json({ error: "subscription_required" });
+  }
   next();
 }
 
@@ -254,7 +286,7 @@ communityRouter.get("/shifttypes/mine", (req, res) => {
   res.json(db.listShiftTypesForRoles(req.community.id, req.memberRoles));
 });
 
-communityRouter.post("/shifts/manual", requireCommunityCanAddTime, (req, res) => {
+communityRouter.post("/shifts/manual", requireCommunityCanAddTime, requireActiveSubscription, (req, res) => {
   const { shiftTypeId, date, hours } = req.body;
 
   const shiftType = db.listShiftTypes(req.community.id).find((t) => t.id === Number(shiftTypeId));
@@ -275,7 +307,7 @@ communityRouter.post("/shifts/manual", requireCommunityCanAddTime, (req, res) =>
 });
 
 // ---- Live shift controls: same clock as the /shift slash command --------
-communityRouter.post("/shift/start", (req, res) => {
+communityRouter.post("/shift/start", requireActiveSubscription, (req, res) => {
   const discordId = req.session.user.id;
   if (db.getActiveShift(req.community.id, discordId)) {
     return res.status(409).json({ error: "already_on_shift" });
@@ -407,7 +439,7 @@ communityRouter.get("/admin/members", requireCommunityAdmin, (req, res) => {
   res.json(db.listAllUsers(req.community.id));
 });
 
-communityRouter.post("/admin/shifts/manual", requireCommunityAdmin, (req, res) => {
+communityRouter.post("/admin/shifts/manual", requireCommunityAdmin, requireActiveSubscription, (req, res) => {
   const { discordId, shiftTypeId, date, hours } = req.body;
   if (!discordId) return res.status(400).json({ error: "discordId_required" });
 
@@ -425,6 +457,26 @@ communityRouter.post("/admin/shifts/manual", requireCommunityAdmin, (req, res) =
 
   db.addManualShift(req.community.id, discordId, shiftType.id, date, hoursNum);
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+communityRouter.post("/billing/checkout", requireCommunityAdmin, async (req, res) => {
+  if (req.community.subscription_status === "active") {
+    return res.status(409).json({ error: "already_active" });
+  }
+  try {
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const url = await stripeService.createCheckoutSession(req.community, {
+      successUrl: `${origin}/admin.html?stripe=success`,
+      cancelUrl: `${origin}/admin.html?stripe=cancel`,
+    });
+    res.json({ url });
+  } catch (err) {
+    console.error("[billing/checkout]", err);
+    res.status(500).json({ error: "checkout_failed" });
+  }
 });
 
 app.use("/api/communities/:id", communityRouter);

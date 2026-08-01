@@ -5,7 +5,7 @@ const {
   StringSelectMenuBuilder,
 } = require("discord.js");
 const db = require("./db");
-const { requireCommunity } = require("./communityContext");
+const { requireCommunity, requireActiveSubscription } = require("./communityContext");
 const { baseEmbed, formatDuration } = require("./format");
 
 const PREFIX = "sm"; // "shift manage"
@@ -175,6 +175,7 @@ async function handleComponent(interaction) {
 
     case "type": {
       if (active) return interaction.update(onShiftPanel(client, community, userId, username, active));
+      if (!(await requireActiveSubscription(interaction, community))) return;
       const shiftTypeId = Number(interaction.values[0]);
       const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === shiftTypeId);
       if (shiftType?.required_role_id && !memberRoleIds.includes(shiftType.required_role_id)) {

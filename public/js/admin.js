@@ -300,24 +300,59 @@
     document.getElementById("admin-content").style.display = state === "ok" ? "" : "none";
   }
 
+  function renderBillingBanner(subscriptionStatus) {
+    const banner = document.getElementById("billing-banner");
+    const text = document.getElementById("billing-banner-text");
+    if (subscriptionStatus === "active") {
+      banner.style.display = "none";
+      return;
+    }
+    banner.style.display = "";
+    text.textContent =
+      subscriptionStatus === "past_due"
+        ? "This community's subscription payment is past due — bot features will be disabled soon unless it's resolved."
+        : "This community doesn't have an active subscription — bot features (clocking on, logging time) are disabled.";
+  }
+
+  function wireBilling() {
+    document.getElementById("billing-subscribe-btn").addEventListener("click", async () => {
+      const res = await api(`/api/communities/${communityId}/billing/checkout`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.url) {
+        location.href = body.url;
+      } else {
+        alert("Couldn't start checkout. Billing may not be configured yet.");
+      }
+    });
+
+    const params = new URLSearchParams(location.search);
+    if (params.get("stripe") === "success") {
+      alert("Thanks! Your subscription is being activated — this can take a few seconds to show up.");
+    }
+  }
+
   async function loadCommunityAndRefresh() {
     stopPolling();
     if (!communityId) {
+      document.getElementById("billing-banner").style.display = "none";
       showState("no-community");
       return;
     }
 
     const detailRes = await api(`/api/communities/${communityId}`);
     if (!detailRes.ok) {
+      document.getElementById("billing-banner").style.display = "none";
       showState("no-community");
       return;
     }
     const detail = await detailRes.json();
     if (!detail.isAdmin) {
+      document.getElementById("billing-banner").style.display = "none";
       showState("denied");
       return;
     }
 
+    renderBillingBanner(detail.subscriptionStatus);
     showState("ok");
     await loadRoles();
     await Promise.all([loadActive(), loadRoster(), loadMembers(), loadShiftTypes(), loadQuotas(), loadPermissions()]);
@@ -344,6 +379,7 @@
     });
 
     wireForms();
+    wireBilling();
     await loadCommunityAndRefresh();
   }
 

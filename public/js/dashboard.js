@@ -343,7 +343,14 @@
       method: "POST",
       body: JSON.stringify({ shiftTypeId }),
     });
-    if (res.ok) await refreshAll();
+    if (res.ok) {
+      await refreshAll();
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (body.error === "subscription_required") {
+      alert("This community doesn't have an active Shiftus subscription, so clocking on is disabled right now.");
+    }
   }
 
   async function endShift() {

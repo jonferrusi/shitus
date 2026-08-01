@@ -100,8 +100,11 @@ function ensureColumn(table, column, ddl) {
   }
 }
 
-// (Later phases add columns here, e.g. Stripe fields, on-shift role config,
-// reminder settings — via ensureColumn(), never by editing the CREATE TABLE
+ensureColumn("communities", "stripe_customer_id", "stripe_customer_id TEXT");
+ensureColumn("communities", "stripe_subscription_id", "stripe_subscription_id TEXT");
+
+// (Later phases add columns here, e.g. on-shift role config, reminder
+// settings — via ensureColumn(), never by editing the CREATE TABLE
 // statements above once real data may exist.)
 
 // ---------------------------------------------------------------------------
@@ -147,6 +150,18 @@ function updateCommunitySchedule(communityId, { weekStartDay, weekStartHour }) {
 
 function setSubscriptionStatus(communityId, status) {
   db.prepare("UPDATE communities SET subscription_status = ? WHERE id = ?").run(status, communityId);
+}
+
+function setStripeIds(communityId, { customerId, subscriptionId }) {
+  db.prepare("UPDATE communities SET stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?").run(
+    customerId,
+    subscriptionId,
+    communityId
+  );
+}
+
+function getCommunityByStripeCustomerId(customerId) {
+  return db.prepare("SELECT * FROM communities WHERE stripe_customer_id = ?").get(customerId);
 }
 
 function addCommunityMember(communityId, discordId) {
@@ -577,6 +592,8 @@ module.exports = {
   updateCommunityGuildInfo,
   updateCommunitySchedule,
   setSubscriptionStatus,
+  setStripeIds,
+  getCommunityByStripeCustomerId,
   addCommunityMember,
   isCommunityMember,
   listCommunitiesForMember,

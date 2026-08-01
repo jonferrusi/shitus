@@ -41,6 +41,13 @@
           <h1>Admin</h1>
         </div>
 
+        <div id="billing-banner" class="section" style="display:none;">
+          <div class="error-banner" style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+            <span id="billing-banner-text">This community doesn't have an active subscription — bot features (clocking on, logging time) are disabled.</span>
+            <button class="btn btn-accent" id="billing-subscribe-btn" style="flex-shrink:0;">Subscribe</button>
+          </div>
+        </div>
+
         <div id="denied" class="section" style="display:none;">
           <div class="error-banner">You don't have admin access on this server.</div>
         </div>
