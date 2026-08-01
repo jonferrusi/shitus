@@ -1,4 +1,4 @@
-# Duty Log — Shift Tracker Bot
+# Shiftus — Shift Tracker Bot
 
 A Discord bot + web dashboard for tracking staff shifts: clock on/off, different
 shift types (Normal Patrol, Supervisory, or anything you add), weekly quotas,
@@ -66,7 +66,7 @@ so anything logged in Discord shows up on the site immediately.
 
 ```bash
 npm install
-cp .env.example .env
+cp env.example .env
 # then fill in .env with the values from step 1
 ```
 

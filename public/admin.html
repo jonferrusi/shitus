@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shiftus — Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span class="dot"></span> Shiftus</div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard.html" class="nav-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="/admin.html" class="nav-link active">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6l-8-4Z"/></svg>
+          Admin
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user">
+          <img id="avatar" class="avatar" alt="" />
+          <span id="username">—</span>
+        </div>
+        <button class="btn btn-ghost" id="logout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page">
+        <div class="page-head">
+          <p class="eyebrow">Server Management</p>
+          <h1>Admin</h1>
+        </div>
+
+        <div id="denied" class="section" style="display:none;">
+          <div class="error-banner">You don't have admin access on this server.</div>
+        </div>
+
+        <div id="admin-content">
+          <div class="section">
+            <div class="section-head"><h2>Live Now</h2></div>
+            <div class="card">
+              <table>
+                <thead>
+                  <tr><th>Member</th><th>Type</th><th class="mono">Elapsed</th></tr>
+                </thead>
+                <tbody id="active-body"></tbody>
+              </table>
+              <div id="active-empty" class="empty" style="display:none;">Nobody is on shift right now.</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Roster — This Week</h2></div>
+            <div class="card">
+              <table>
+                <thead>
+                  <tr><th>Member</th><th>Primary Type</th><th class="mono">Hours</th><th>Quota</th></tr>
+                </thead>
+                <tbody id="roster-body"></tbody>
+              </table>
+              <div id="roster-empty" class="empty" style="display:none;">No hours logged yet this week.</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Add Time</h2></div>
+            <div class="card">
+              <form id="admin-add-form" class="form-row">
+                <select id="admin-add-member" required></select>
+                <select id="admin-add-type" required></select>
+                <input type="date" id="admin-add-date" required />
+                <input type="number" id="admin-add-hours" min="0.25" max="24" step="0.25" placeholder="Hours" required />
+                <button class="btn btn-accent" type="submit">Add Time</button>
+              </form>
+              <div id="admin-add-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Shift Types</h2></div>
+            <div class="card">
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>Access</th><th></th></tr>
+                </thead>
+                <tbody id="shifttypes-body"></tbody>
+              </table>
+              <form id="shifttype-form" class="form-row">
+                <input type="text" id="shifttype-name" placeholder="New shift type name" required />
+                <select id="shifttype-role"></select>
+                <button class="btn btn-accent" type="submit">Add Type</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Weekly Quotas</h2></div>
+            <div class="card">
+              <table>
+                <thead>
+                  <tr><th>Applies To</th><th class="mono">Hours / Week</th><th></th></tr>
+                </thead>
+                <tbody id="quotas-body"></tbody>
+              </table>
+              <form id="quota-form" class="form-row">
+                <select id="quota-type"></select>
+                <input type="number" id="quota-hours" min="0" step="0.5" placeholder="Hours" required />
+                <button class="btn btn-accent" type="submit">Set Quota</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-head"><h2>Permissions</h2></div>
+            <div class="card">
+              <div class="quota-row">
+                <div class="quota-row-head"><span class="name">Admin</span></div>
+                <div id="perm-admin-list"></div>
+              </div>
+              <div class="quota-row">
+                <div class="quota-row-head"><span class="name">Add Time</span></div>
+                <div id="perm-addtime-list"></div>
+              </div>
+              <form id="perm-form" class="form-row">
+                <select id="perm-role"></select>
+                <select id="perm-type">
+                  <option value="admin">Admin</option>
+                  <option value="add_time">Add Time</option>
+                </select>
+                <button class="btn btn-accent" type="submit">Grant</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>

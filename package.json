@@ -1,7 +1,7 @@
 {
-  "name": "shift-tracker-bot",
+  "name": "shiftus",
   "version": "1.0.0",
-  "description": "Discord shift-tracking bot with a web dashboard (clock in/out, shift types, weekly quotas).",
+  "description": "Shiftus — a Discord shift-tracking bot and web dashboard (clock in/out, shift types, weekly quotas).",
   "main": "src/bot.js",
   "type": "commonjs",
   "scripts": {
