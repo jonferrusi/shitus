@@ -102,10 +102,30 @@ function ensureColumn(table, column, ddl) {
 
 ensureColumn("communities", "stripe_customer_id", "stripe_customer_id TEXT");
 ensureColumn("communities", "stripe_subscription_id", "stripe_subscription_id TEXT");
+ensureColumn("communities", "on_shift_role_id", "on_shift_role_id TEXT");
+ensureColumn("communities", "supervisor_check_role_id", "supervisor_check_role_id TEXT");
+ensureColumn("communities", "active_supervisor_role_id", "active_supervisor_role_id TEXT");
+ensureColumn("communities", "loa_role_id", "loa_role_id TEXT");
 
-// (Later phases add columns here, e.g. on-shift role config, reminder
-// settings — via ensureColumn(), never by editing the CREATE TABLE
-// statements above once real data may exist.)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS loa_requests (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    community_id       INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    discord_id         TEXT NOT NULL,
+    reason             TEXT NOT NULL,
+    duration_days      INTEGER NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'pending', -- pending | approved | denied
+    submitted_at       INTEGER NOT NULL,
+    reviewed_at        INTEGER,
+    reviewer_id        TEXT,
+    original_nickname  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_loa_community ON loa_requests(community_id, status);
+`);
+
+// (Later phases add columns/tables here, e.g. reminder settings — via
+// ensureColumn(), never by editing the CREATE TABLE statements above once
+// real data may exist.)
 
 // ---------------------------------------------------------------------------
 // Communities
@@ -146,6 +166,17 @@ function updateCommunitySchedule(communityId, { weekStartDay, weekStartHour }) {
     weekStartHour,
     communityId
   );
+}
+
+function updateCommunityRoles(communityId, { onShiftRoleId, supervisorCheckRoleId, activeSupervisorRoleId, loaRoleId }) {
+  db.prepare(
+    `UPDATE communities SET
+       on_shift_role_id = ?,
+       supervisor_check_role_id = ?,
+       active_supervisor_role_id = ?,
+       loa_role_id = ?
+     WHERE id = ?`
+  ).run(onShiftRoleId, supervisorCheckRoleId, activeSupervisorRoleId, loaRoleId, communityId);
 }
 
 function setSubscriptionStatus(communityId, status) {
@@ -333,6 +364,17 @@ function deleteQuota(communityId, shiftTypeId) {
 // ---------------------------------------------------------------------------
 // Shifts
 // ---------------------------------------------------------------------------
+function getShiftById(id) {
+  return db
+    .prepare(
+      `SELECT s.*, st.name as shift_type_name, u.username, u.avatar FROM shifts s
+       JOIN shift_types st ON st.id = s.shift_type_id
+       LEFT JOIN users u ON u.discord_id = s.discord_id
+       WHERE s.id = ?`
+    )
+    .get(id);
+}
+
 function getActiveShift(communityId, discordId) {
   return db
     .prepare(
@@ -580,6 +622,45 @@ function rosterWeeklyData(communityId, weekStart) {
     .all(weekStart, weekStart, communityId);
 }
 
+// ---------------------------------------------------------------------------
+// LOA (Leave of Absence) requests
+// ---------------------------------------------------------------------------
+function createLoaRequest(communityId, discordId, reason, durationDays) {
+  return db
+    .prepare(
+      `INSERT INTO loa_requests (community_id, discord_id, reason, duration_days, status, submitted_at)
+       VALUES (?, ?, ?, ?, 'pending', ?)`
+    )
+    .run(communityId, discordId, reason, durationDays, Math.floor(Date.now() / 1000));
+}
+
+function getLoaRequest(id) {
+  return db.prepare("SELECT * FROM loa_requests WHERE id = ?").get(id);
+}
+
+function listPendingLoaRequests(communityId) {
+  return db
+    .prepare("SELECT * FROM loa_requests WHERE community_id = ? AND status = 'pending' ORDER BY submitted_at ASC")
+    .all(communityId);
+}
+
+function listLoaHistory(communityId, limit = 50) {
+  return db
+    .prepare(
+      `SELECT * FROM loa_requests WHERE community_id = ? AND status != 'pending'
+       ORDER BY reviewed_at DESC LIMIT ?`
+    )
+    .all(communityId, limit);
+}
+
+/** Marks an LOA request reviewed, optionally recording the nickname it should be restored to later. */
+function reviewLoaRequest(id, status, reviewerId, originalNickname) {
+  db.prepare(
+    `UPDATE loa_requests SET status = ?, reviewer_id = ?, reviewed_at = ?, original_nickname = ?
+     WHERE id = ?`
+  ).run(status, reviewerId, Math.floor(Date.now() / 1000), originalNickname ?? null, id);
+}
+
 module.exports = {
   db,
   ensureColumn,
@@ -591,6 +672,7 @@ module.exports = {
   getCommunityBySlug,
   updateCommunityGuildInfo,
   updateCommunitySchedule,
+  updateCommunityRoles,
   setSubscriptionStatus,
   setStripeIds,
   getCommunityByStripeCustomerId,
@@ -616,6 +698,7 @@ module.exports = {
   listQuotas,
   deleteQuota,
   // shifts
+  getShiftById,
   getActiveShift,
   clockOn,
   clockOff,
@@ -630,4 +713,10 @@ module.exports = {
   weeklyTotalsByType,
   allTimeTotalsByType,
   weeklyLeaderboard,
+  // LOA
+  createLoaRequest,
+  getLoaRequest,
+  listPendingLoaRequests,
+  listLoaHistory,
+  reviewLoaRequest,
 };

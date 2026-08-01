@@ -1,14 +1,7 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const db = require("../db");
-const { getCommunity, requireCommunity } = require("../communityContext");
+const { getCommunity, requireCommunityAdmin } = require("../communityContext");
 const { baseEmbed, GOLD, GREEN, RED, SPACER } = require("../format");
-
-function isAdmin(interaction, community) {
-  if (interaction.user.id === process.env.PLATFORM_OWNER_DISCORD_ID) return true;
-  if (interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-  const adminRoleIds = db.effectiveRoleIds(community.id, "admin");
-  return interaction.member.roles.cache.some((r) => adminRoleIds.has(r.id));
-}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -108,6 +101,36 @@ module.exports = {
             )
         )
         .addSubcommand((sub) => sub.setName("list").setDescription("List which roles have which permissions"))
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName("roles")
+        .setDescription("Configure on-shift and LOA Discord roles")
+        .addSubcommand((sub) =>
+          sub
+            .setName("onshift")
+            .setDescription("Role assigned to anyone currently on any shift")
+            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("supervisor")
+            .setDescription("Role that marks someone eligible for the active-supervisor role")
+            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("activesupervisor")
+            .setDescription("Role assigned alongside on-shift when a supervisor clocks on")
+            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("loa")
+            .setDescription("Role assigned to members on an approved Leave of Absence")
+            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
+        )
+        .addSubcommand((sub) => sub.setName("list").setDescription("Show current role configuration"))
     ),
 
   async autocomplete(interaction) {
@@ -121,15 +144,8 @@ module.exports = {
   },
 
   async execute(interaction) {
-    const community = await requireCommunity(interaction);
+    const community = await requireCommunityAdmin(interaction);
     if (!community) return;
-
-    if (!isAdmin(interaction, community)) {
-      const embed = baseEmbed(interaction.client, RED)
-        .setTitle("Access Denied")
-        .setDescription("You don't have permission to use admin commands.");
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
 
     const group = interaction.options.getSubcommandGroup();
     const sub   = interaction.options.getSubcommand();
@@ -144,6 +160,11 @@ module.exports = {
     if (group === "quota") {
       if (sub === "set")  return quotaSet(interaction, community);
       if (sub === "list") return quotaList(interaction, community);
+    }
+
+    if (group === "roles") {
+      if (sub === "list") return rolesList(interaction, community);
+      return rolesSet(interaction, community, sub);
     }
 
     if (group === "permissions") {
@@ -350,6 +371,64 @@ async function permissionsList(interaction, community) {
       }
     )
     .setFooter({ text: "Roles set in .env also count but aren't listed here  ·  Shiftus" });
+
+  return interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+// ── On-shift / LOA roles ─────────────────────────────────────────────────────
+
+const ROLE_FIELD_BY_SUBCOMMAND = {
+  onshift: "onShiftRoleId",
+  supervisor: "supervisorCheckRoleId",
+  activesupervisor: "activeSupervisorRoleId",
+  loa: "loaRoleId",
+};
+
+const ROLE_LABEL_BY_SUBCOMMAND = {
+  onshift: "On-Shift Role",
+  supervisor: "Supervisor Check Role",
+  activesupervisor: "Active Supervisor Role",
+  loa: "LOA Role",
+};
+
+async function rolesSet(interaction, community, sub) {
+  const role = interaction.options.getRole("role");
+  const field = ROLE_FIELD_BY_SUBCOMMAND[sub];
+
+  db.updateCommunityRoles(community.id, {
+    onShiftRoleId: community.on_shift_role_id,
+    supervisorCheckRoleId: community.supervisor_check_role_id,
+    activeSupervisorRoleId: community.active_supervisor_role_id,
+    loaRoleId: community.loa_role_id,
+    [field]: role?.id ?? null,
+  });
+
+  const embed = baseEmbed(interaction.client, GREEN)
+    .setTitle("Role Updated")
+    .addFields(
+      { name: "Setting", value: ROLE_LABEL_BY_SUBCOMMAND[sub], inline: true },
+      { name: "Role", value: role ? `<@&${role.id}>` : "_Cleared_", inline: true },
+    )
+    .setFooter({ text: "Shiftus" });
+
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function rolesList(interaction, community) {
+  const fresh = db.getCommunityById(community.id);
+  const row = (label, roleId) => `**${label}**  ${roleId ? `<@&${roleId}>` : "_Not set_"}`;
+
+  const embed = baseEmbed(interaction.client)
+    .setTitle("Role Configuration")
+    .setDescription(
+      [
+        row("On-Shift Role", fresh.on_shift_role_id),
+        row("Supervisor Check Role", fresh.supervisor_check_role_id),
+        row("Active Supervisor Role", fresh.active_supervisor_role_id),
+        row("LOA Role", fresh.loa_role_id),
+      ].join("\n")
+    )
+    .setFooter({ text: "Shiftus" });
 
   return interaction.reply({ embeds: [embed], ephemeral: true });
 }

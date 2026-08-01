@@ -5,6 +5,7 @@ const {
 } = require("discord.js");
 const db = require("../db");
 const { getCommunity, requireCommunity, requireActiveSubscription } = require("../communityContext");
+const { syncOnShiftRoles } = require("../shiftActions");
 const { baseEmbed, formatDuration, progressBar, GREEN, RED, GOLD, SPACER } = require("../format");
 
 const SELECT_PREFIX = "shifton"; // "shift on" — distinct from panel.js's "sm:" prefix
@@ -60,6 +61,7 @@ async function startShift(interaction, community, shiftTypeId) {
   }
 
   db.clockOn(community.id, interaction.user.id, shiftType.id);
+  await syncOnShiftRoles(community, interaction.user.id, memberRoleIds, true);
 
   const embed = baseEmbed(interaction.client, GREEN)
     .setTitle("Shift Started")
@@ -174,6 +176,8 @@ module.exports = {
 
       const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === active.shift_type_id);
       const duration = db.clockOff(active.id);
+      const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
+      await syncOnShiftRoles(community, discordId, memberRoleIds, false);
 
       const fields = quotaFields(community, discordId, active.shift_type_id);
 

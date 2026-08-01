@@ -6,6 +6,7 @@ const {
 } = require("discord.js");
 const db = require("./db");
 const { requireCommunity, requireActiveSubscription } = require("./communityContext");
+const { syncOnShiftRoles } = require("./shiftActions");
 const { baseEmbed, formatDuration } = require("./format");
 
 const PREFIX = "sm"; // "shift manage"
@@ -185,6 +186,7 @@ async function handleComponent(interaction) {
         });
       }
       db.clockOn(community.id, userId, shiftTypeId);
+      await syncOnShiftRoles(community, userId, memberRoleIds, true);
       const fresh = db.getActiveShift(community.id, userId);
       return interaction.update(onShiftPanel(client, community, userId, username, fresh));
     }
@@ -206,6 +208,7 @@ async function handleComponent(interaction) {
     case "end": {
       if (!active) return interaction.update(idlePanel(client, community, userId, username));
       const duration = db.clockOff(active.id);
+      await syncOnShiftRoles(community, userId, memberRoleIds, false);
       const shiftType = db
         .listShiftTypes(community.id, { activeOnly: false })
         .find((t) => t.id === active.shift_type_id);

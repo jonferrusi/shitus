@@ -85,12 +85,36 @@ function buildLeaderboardEmbed(client, community, shiftTypeId, typeName) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("shiftleaderboard")
-    .setDescription("See who has the most shift hours this week"),
+    .setName("leaderboard")
+    .setDescription("See who has the most shift hours this week")
+    .addStringOption((o) =>
+      o.setName("type").setDescription("Shift type to filter by (leave blank for overall)").setRequired(false).setAutocomplete(true)
+    ),
+
+  async autocomplete(interaction) {
+    const community = require("../communityContext").getCommunity(interaction);
+    if (!community) return interaction.respond([]);
+
+    const focused = interaction.options.getFocused().toLowerCase();
+    const types = db.listShiftTypes(community.id);
+    const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
+    await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
+  },
 
   async execute(interaction) {
     const community = await requireCommunity(interaction);
     if (!community) return;
+
+    const typeName = interaction.options.getString("type");
+    if (typeName) {
+      const shiftType = db.listShiftTypes(community.id).find((t) => t.name.toLowerCase() === typeName.toLowerCase());
+      if (!shiftType) {
+        return interaction.reply({ content: `Couldn't find a shift type named **${typeName}**.`, ephemeral: true });
+      }
+      const embed = buildLeaderboardEmbed(interaction.client, community, shiftType.id, shiftType.name);
+      const row = buildSelectRow(community, String(shiftType.id));
+      return interaction.reply({ embeds: [embed], components: [row] });
+    }
 
     const row = buildSelectRow(community);
     const embed = baseEmbed(interaction.client, GOLD)

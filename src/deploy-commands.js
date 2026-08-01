@@ -1,10 +1,8 @@
 require("dotenv").config();
 const { REST, Routes } = require("discord.js");
-const shift = require("./commands/shift");
-const admin = require("./commands/admin");
-const leaderboard = require("./commands/leaderboard");
+const { commands: commandModules } = require("./commands");
 
-const commands = [shift.data.toJSON(), admin.data.toJSON(), leaderboard.data.toJSON()];
+const commands = commandModules.map((c) => c.data.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 

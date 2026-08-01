@@ -7,6 +7,7 @@ const SqliteSessionStore = require("./sessionStore");
 const db = require("./db");
 const discordApi = require("./discordApi");
 const stripeService = require("./stripe");
+const shiftActions = require("./shiftActions");
 
 const app = express();
 
@@ -307,7 +308,7 @@ communityRouter.post("/shifts/manual", requireCommunityCanAddTime, requireActive
 });
 
 // ---- Live shift controls: same clock as the /shift slash command --------
-communityRouter.post("/shift/start", requireActiveSubscription, (req, res) => {
+communityRouter.post("/shift/start", requireActiveSubscription, async (req, res) => {
   const discordId = req.session.user.id;
   if (db.getActiveShift(req.community.id, discordId)) {
     return res.status(409).json({ error: "already_on_shift" });
@@ -321,14 +322,16 @@ communityRouter.post("/shift/start", requireActiveSubscription, (req, res) => {
   }
 
   db.clockOn(req.community.id, discordId, shiftType.id);
+  await shiftActions.syncOnShiftRoles(req.community, discordId, req.memberRoles, true);
   res.json({ ok: true });
 });
 
-communityRouter.post("/shift/end", (req, res) => {
+communityRouter.post("/shift/end", async (req, res) => {
   const active = db.getActiveShift(req.community.id, req.session.user.id);
   if (!active) return res.status(409).json({ error: "not_on_shift" });
 
   const duration = db.clockOff(active.id);
+  await shiftActions.syncOnShiftRoles(req.community, req.session.user.id, req.memberRoles, false);
   res.json({ ok: true, durationSeconds: duration });
 });
 

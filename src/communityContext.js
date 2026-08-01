@@ -57,4 +57,40 @@ async function requireActiveSubscription(interaction, community) {
   return false;
 }
 
-module.exports = { getCommunity, requireCommunity, requireActiveSubscription };
+/** Whether this interaction's member is an admin for the given community. */
+function isCommunityAdmin(interaction, community) {
+  const { PermissionFlagsBits } = require("discord.js");
+  if (interaction.user.id === process.env.PLATFORM_OWNER_DISCORD_ID) return true;
+  if (interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  const adminRoleIds = db.effectiveRoleIds(community.id, "admin");
+  return interaction.member.roles.cache.some((r) => adminRoleIds.has(r.id));
+}
+
+const ADMIN_REQUIRED_MESSAGE = "You don't have permission to use this command.";
+
+/**
+ * Resolves the community and confirms the caller is an admin for it,
+ * replying with a friendly denial and returning null otherwise. Use like:
+ *
+ *   const community = await requireCommunityAdmin(interaction);
+ *   if (!community) return;
+ */
+async function requireCommunityAdmin(interaction) {
+  const community = await requireCommunity(interaction);
+  if (!community) return null;
+
+  if (!isCommunityAdmin(interaction, community)) {
+    const embed = baseEmbed(interaction.client, RED).setTitle("Access Denied").setDescription(ADMIN_REQUIRED_MESSAGE);
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    return null;
+  }
+  return community;
+}
+
+module.exports = {
+  getCommunity,
+  requireCommunity,
+  requireActiveSubscription,
+  isCommunityAdmin,
+  requireCommunityAdmin,
+};

@@ -90,10 +90,8 @@ async function getGuildRoles(guildId) {
  */
 async function deployCommandsToGuild(guildId) {
   try {
-    const shift = require("./commands/shift");
-    const admin = require("./commands/admin");
-    const leaderboard = require("./commands/leaderboard");
-    const commands = [shift.data.toJSON(), admin.data.toJSON(), leaderboard.data.toJSON()];
+    const { commands: commandModules } = require("./commands");
+    const commands = commandModules.map((c) => c.data.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
     await rest.put(Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, guildId), {
@@ -104,6 +102,69 @@ async function deployCommandsToGuild(guildId) {
     console.warn(`[deployCommandsToGuild] ${guildId}: ${err.message}`);
     return false;
   }
+}
+
+/** Adds a role to a guild member. Returns false (non-throwing) on failure — e.g. the bot's
+ * highest role is ranked below the target role, or it lacks Manage Roles. */
+async function addMemberRole(guildId, userId, roleId) {
+  const res = await fetch(`${API}/guilds/${guildId}/members/${userId}/roles/${roleId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+  });
+  if (!res.ok) console.warn(`[addMemberRole] guild=${guildId} user=${userId} role=${roleId}: ${res.status}`);
+  return res.ok;
+}
+
+/** Removes a role from a guild member. Same non-throwing failure behavior as addMemberRole. */
+async function removeMemberRole(guildId, userId, roleId) {
+  const res = await fetch(`${API}/guilds/${guildId}/members/${userId}/roles/${roleId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+  });
+  if (!res.ok) console.warn(`[removeMemberRole] guild=${guildId} user=${userId} role=${roleId}: ${res.status}`);
+  return res.ok;
+}
+
+/** Renames a member's server nickname. */
+async function setMemberNickname(guildId, userId, nickname) {
+  const res = await fetch(`${API}/guilds/${guildId}/members/${userId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ nick: nickname }),
+  });
+  if (!res.ok) console.warn(`[setMemberNickname] guild=${guildId} user=${userId}: ${res.status}`);
+  return res.ok;
+}
+
+/** Sends a DM to a Discord user via the bot (opens/reuses a DM channel first). */
+async function sendDM(userId, content) {
+  const openRes = await fetch(`${API}/users/@me/channels`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ recipient_id: userId }),
+  });
+  if (!openRes.ok) {
+    console.warn(`[sendDM] couldn't open DM channel with ${userId}: ${openRes.status}`);
+    return false;
+  }
+  const channel = await openRes.json();
+
+  const msgRes = await fetch(`${API}/channels/${channel.id}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(content),
+  });
+  if (!msgRes.ok) console.warn(`[sendDM] couldn't message ${userId}: ${msgRes.status}`);
+  return msgRes.ok;
 }
 
 function memberHasAnyRole(member, roleIds) {
@@ -129,6 +190,10 @@ module.exports = {
   getGuild,
   getGuildRoles,
   deployCommandsToGuild,
+  addMemberRole,
+  removeMemberRole,
+  setMemberNickname,
+  sendDM,
   isAdminMember,
   canAddTimeMember,
 };

@@ -9,19 +9,20 @@ the dashboard rather than configured per-deployment.
 
 ## What you get
 
-- **`/shift on`** — clock on to a shift (pick a type from the autocomplete list)
+- **`/shift on [type]`** — clock on to a shift (dropdown if the server has more than one type)
 - **`/shift off`** — clock off, see how long you were on and this week's totals
+- **`/shift break`** — start or end a break during an active shift
 - **`/shift status`** — quick check of your current shift + weekly progress
-- **`/shift manage`** — an interactive panel the bot posts in the channel:
-  a **Start Shift** button → a dropdown to pick the shift type → the panel
-  updates to show **Start Break** / **End Break** and **End Shift** buttons
-  while you're on. Everything happens on that one message.
-- **`/shiftleaderboard`** — pick a shift type from a dropdown, then see the
-  weekly leaderboard for it: 🟢 for people over quota, 🔴 for people under it
+- **`/leaderboard [type]`** — weekly leaderboard, optionally filtered to one shift type
+- **`/loa request`** — opens a modal to submit a Leave of Absence request (reason + duration) for admin review
+- **`/activeshifts`** — admin-only: everyone currently on shift, each with a Force End button
+  (ends the shift, removes on-shift roles, and DMs the member who ended it and why)
 - **`/admin shifttype add|remove|restrict|list`** — manage shift types, including
   restricting one to a specific Discord role (e.g. only Supervisors can start
   a Supervisory Shift)
 - **`/admin quota set|list`** — set a weekly hour quota, either overall or per shift type
+- **`/admin roles onshift|supervisor|activesupervisor|loa|list`** — configure the
+  Discord roles assigned on clock-on/off and on LOA approval (see "On-shift roles" below)
 - **`/admin permissions add|remove|list`** — grant/revoke Admin or Add Time
   access to a role directly from Discord, no `.env` editing or restart needed
 - A dashboard website (**Sign in with Discord**) showing:
@@ -143,7 +144,24 @@ mainly useful for the platform operator's own communities):
   a Supervisory Shift) via `/admin shifttype add`/`restrict`, or the
   dropdown next to each shift type on the Admin page. Leave it unrestricted
   and anyone can start it. This is checked everywhere someone can start a
-  shift: `/shift on`, the `/shift manage` panel, and the website.
+  shift: `/shift on`, and the website.
+
+## On-shift roles
+
+Configure up to four roles per community with `/admin roles ...` (an Admin
+page section is coming in a later update):
+
+- **On-Shift Role** — assigned to anyone currently on any shift, removed the
+  moment they clock off (including a Force End).
+- **Supervisor Check Role** — a role members already have; if someone with it
+  clocks on, they also get the **Active Supervisor Role**.
+- **Active Supervisor Role** — assigned alongside the On-Shift Role, only for
+  members who hold the Supervisor Check Role.
+- **LOA Role** — reserved for the Leave of Absence approval workflow.
+
+All of this is best-effort: if the bot's own role is ranked below the one
+it's trying to assign, or it lacks Manage Roles, the role change is skipped
+and logged rather than blocking the clock-on/off itself.
 
 ## Clocking on and off
 
@@ -161,10 +179,10 @@ mainly useful for the platform operator's own communities):
 
 ## Leaderboard and quota colors
 
-- `/shiftleaderboard` shows a dropdown of every shift type plus "Overall".
-  Whichever one is picked, it ranks the top 15 people by hours logged **this
-  week** for that type, with a colored dot per person: 🟢 if they've met or
-  passed the quota for that type, 🔴 if they haven't, ⚪ if no quota is set.
+- `/leaderboard` shows a dropdown of every shift type plus "Overall" (or pass
+  `type` directly to skip straight to it). Ranks the top 15 people by hours
+  logged **this week** for that type, with progress bars and a ✅ for anyone
+  who's met the quota.
 - The same "over quota = green, under quota = red" treatment is used on the
   website's Admin roster page, and every quota bar on the dashboard has an
   explicit "Quota met" / "Below quota" label rather than relying on color alone.

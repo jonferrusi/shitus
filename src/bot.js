@@ -1,10 +1,12 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
 
-const shift       = require("./commands/shift");
-const admin       = require("./commands/admin");
+const { commands: commandModules } = require("./commands");
+const shift = require("./commands/shift");
 const leaderboard = require("./commands/leaderboard");
-const panel       = require("./panel");
+const loa = require("./commands/loa");
+const activeshifts = require("./commands/activeshifts");
+const panel = require("./panel");
 
 // ── Owner — always gets Discord admin in every server the bot joins ───────────
 const OWNER_ID = process.env.PLATFORM_OWNER_DISCORD_ID;
@@ -54,9 +56,9 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-client.commands.set(shift.data.name,       shift);
-client.commands.set(admin.data.name,       admin);
-client.commands.set(leaderboard.data.name, leaderboard);
+for (const command of commandModules) {
+  client.commands.set(command.data.name, command);
+}
 
 // On startup, grant admin in all currently joined guilds
 client.once("clientReady", async () => {
@@ -95,6 +97,11 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
+    if (interaction.isModalSubmit() && loa.isLoaModal(interaction.customId)) {
+      await loa.handleModalSubmit(interaction);
+      return;
+    }
+
     if (interaction.isStringSelectMenu() && interaction.customId === "shiftleaderboard-select") {
       await leaderboard.handleSelect(interaction);
       return;
@@ -102,6 +109,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.isStringSelectMenu() && shift.isShiftOnSelect(interaction.customId)) {
       await shift.handleSelect(interaction);
+      return;
+    }
+
+    if (interaction.isButton() && activeshifts.isActiveShiftsComponent(interaction.customId)) {
+      await activeshifts.handleComponent(interaction);
       return;
     }
 
