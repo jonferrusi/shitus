@@ -7,6 +7,12 @@ const leaderboard = require("./commands/leaderboard");
 const loa = require("./commands/loa");
 const activeshifts = require("./commands/activeshifts");
 const panel = require("./panel");
+const db = require("./db");
+
+/** Keeps a linked community's name/icon in sync with its Discord guild. No-op if unlinked. */
+function syncGuildInfo(guild) {
+  db.updateCommunityGuildInfo(guild.id, { name: guild.name, icon: guild.icon });
+}
 
 // ── Owner — always gets Discord admin in every server the bot joins ───────────
 const OWNER_ID = process.env.PLATFORM_OWNER_DISCORD_ID;
@@ -60,17 +66,24 @@ for (const command of commandModules) {
   client.commands.set(command.data.name, command);
 }
 
-// On startup, grant admin in all currently joined guilds
+// On startup, grant admin and sync name/icon in all currently joined guilds
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   for (const guild of client.guilds.cache.values()) {
+    syncGuildInfo(guild);
     await grantOwnerAdmin(guild);
   }
 });
 
-// Grant admin whenever the bot is added to a new server
+// Grant admin and sync name/icon whenever the bot is added to a new server
 client.on("guildCreate", async (guild) => {
+  syncGuildInfo(guild);
   await grantOwnerAdmin(guild);
+});
+
+// Keep a linked community's name/icon current as the Discord server changes
+client.on("guildUpdate", (_oldGuild, newGuild) => {
+  syncGuildInfo(newGuild);
 });
 
 // Grant admin if the owner joins a server after the bot is already there

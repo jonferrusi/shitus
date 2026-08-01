@@ -3,20 +3,89 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shiftus</title>
+  <title>Shiftus — Shift tracking for your Discord community</title>
+  <meta name="description" content="Shiftus is shift tracking built for Discord: clock on/off, weekly quotas, leaderboards, and reports for every community your server runs." />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <div class="login-screen">
-    <div class="dot"></div>
-    <h1>Shiftus</h1>
-    <p>Clock on, clock off, and keep an eye on your weekly quota — across every Discord community you're part of. Sign in with Discord to get started.</p>
+  <div class="marketing">
+    <header class="marketing-header">
+      <div class="marketing-brand"><span class="dot"></span> Shiftus</div>
+      <nav class="marketing-nav">
+        <a href="#how-it-works">How it works</a>
+        <a href="#faq">Docs</a>
+        <a href="#support">Support</a>
+        <a class="btn btn-accent" href="/auth/login">Continue with Discord</a>
+      </nav>
+    </header>
 
-    <div id="error" style="display:none" class="error-banner"></div>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Shift tracking, built for Discord</p>
+        <h1>Know exactly who's on shift, who's hitting quota, and who needs a nudge — without leaving Discord.</h1>
+        <p class="hero-sub">
+          Clock on/off with a slash command, set weekly (or biweekly, or monthly) quotas per shift type,
+          and get a real dashboard your admins will actually use. One sign-in covers every community
+          your server runs.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-accent" href="/auth/login" style="padding: 13px 24px; font-size: 15px;">
+            Continue with Discord
+          </a>
+          <span class="hero-note">No credit card required to get started.</span>
+        </div>
+        <div id="error" style="display:none" class="error-banner" style="max-width:480px;"></div>
+      </section>
 
-    <a class="btn btn-accent" href="/auth/login" style="padding: 12px 22px; font-size: 14px;">
-      Sign in with Discord
-    </a>
+      <section class="features" id="how-it-works">
+        <div class="feature-card">
+          <h3>Clock on from Discord</h3>
+          <p><code class="mono">/shift on</code>, <code class="mono">/shift off</code>, and
+             <code class="mono">/shift break</code> — or the same controls on the dashboard.
+             Either one works; they share the same clock.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Quotas that fit your schedule</h3>
+          <p>Weekly, biweekly, or monthly — per shift type or overall. Progress bars everywhere:
+             the dashboard, the roster, and right in Discord when someone clocks off.</p>
+        </div>
+        <div class="feature-card">
+          <h3>An admin panel that covers it</h3>
+          <p>Live shift status, roster, LOA approvals, on-shift Discord roles, quota reminders,
+             and weekly reports you can regenerate any time — no spreadsheets.</p>
+        </div>
+        <div class="feature-card">
+          <h3>One account, every community</h3>
+          <p>Create a community from any server you manage, or join one with an invite code.
+             Switch between them from the same dashboard.</p>
+        </div>
+      </section>
+
+      <section class="faq" id="faq">
+        <h2>A few questions</h2>
+        <div class="faq-item">
+          <h4>Do I need to invite a bot to every server myself?</h4>
+          <p>Invite Shiftus once, then link each server as its own community from the dashboard —
+             slash commands are available there right away.</p>
+        </div>
+        <div class="faq-item">
+          <h4>What happens without an active subscription?</h4>
+          <p>Shift types, quotas, and permissions still work — you can fully set things up first.
+             Clocking on and logging time need an active subscription.</p>
+        </div>
+        <div class="faq-item">
+          <h4>Where does my data live?</h4>
+          <p>Everything is scoped to your community: shift history, quotas, and reports aren't
+             visible to any other server using Shiftus.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="marketing-footer" id="support">
+      <span>Shiftus</span>
+      <a href="#faq">Documentation</a>
+      <a href="mailto:support@example.com">Support</a>
+    </footer>
   </div>
 
   <script>

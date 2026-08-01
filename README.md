@@ -248,22 +248,14 @@ and counts toward weekly totals, quotas, and the leaderboard — it's just
 tagged internally as `manual` (vs `clock`) so you can tell the two apart if
 you ever query the database directly.
 
-## Moving off your own machine later
+## Deploying
 
-Everything here is a plain Node.js app with a SQLite file, so it will run
-as-is on a small VPS or a host like Railway/Render — just set the same
-environment variables there, update `OAUTH_REDIRECT_URI` (and the Discord
-Developer Portal redirect) to your real domain, and run `npm start` there
-(it launches both the bot and the website together).
-
-**Want the website on Netlify specifically?** There's a separate
-`shift-tracker-website` package with just the frontend, set up to proxy API
-calls through to this backend (wherever it ends up running) — see the
-README inside that package. The bot and database still need to run here,
-on something that stays on; Netlify only hosts the static site.
-
-**Don't want to pay for hosting?** See `FREE-LOCAL-SETUP.md` in this
-project for a step-by-step guide to running everything on your own
-computer for free, using ngrok to give it a public address that the
-Netlify site can reach. The trade-off is it only works while your computer
-and these programs are running.
+Shiftus is one Node.js process (bot + website + scheduler) plus a SQLite
+file — one instance serves every community that links a Discord server to
+it, so there's nothing for individual communities to host themselves. It
+runs as-is on a small VPS or a host like Railway/Render/Fly: set the
+environment variables from `env.example`, point `OAUTH_REDIRECT_URI` (and
+the matching Discord Developer Portal redirect) at your real domain, run
+`npm run deploy-commands` once, then `npm start`. Keep `data.sqlite`
+(and the `sessions` table alongside it) on a persistent volume — it's the
+only state that isn't reconstructible from Discord.
