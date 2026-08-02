@@ -1,239 +1,188 @@
-const {
-  SlashCommandBuilder,
-  StringSelectMenuBuilder,
-  ActionRowBuilder,
-} = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const db = require("../db");
-const { getCommunity, requireCommunity, requireActiveSubscription } = require("../communityContext");
-const { syncOnShiftRoles } = require("../shiftActions");
-const { baseEmbed, formatDuration, progressBar, GREEN, RED, GOLD, SPACER } = require("../format");
-
-const SELECT_PREFIX = "shifton"; // "shift on" — distinct from panel.js's "sm:" prefix
-
-function typeSelectId(userId) {
-  return `${SELECT_PREFIX}:${userId}`;
-}
-
-function isShiftOnSelect(customId) {
-  return customId.startsWith(`${SELECT_PREFIX}:`);
-}
-
-const PERIOD_LABEL = { weekly: "", biweekly: " (biweekly)", monthly: " (monthly)" };
-
-/** Quota progress lines relevant to a given shift type + the overall quota, for one user. */
-function quotaFields(community, discordId, shiftTypeId) {
-  const progress = db.quotaProgressForMember(community, discordId);
-
-  return progress
-    // Only show the quota for the shift type just clocked off of, plus the overall quota.
-    .filter((q) => q.shiftTypeId === null || q.shiftTypeId === shiftTypeId)
-    .map((q) => ({
-      name: (q.shiftTypeName ?? "Overall") + PERIOD_LABEL[q.period],
-      value: `${progressBar(q.seconds, q.hoursRequired)}${q.met ? "  ✅" : ""}`,
-      inline: false,
-    }));
-}
-
-async function startShift(interaction, community, shiftTypeId) {
-  if (!(await requireActiveSubscription(interaction, community))) return;
-
-  const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === shiftTypeId);
-  if (!shiftType) {
-    return interaction.reply({ content: "That shift type doesn't exist anymore.", ephemeral: true });
-  }
-
-  const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-  if (shiftType.required_role_id && !memberRoleIds.includes(shiftType.required_role_id)) {
-    return interaction.reply({
-      content: `You need the <@&${shiftType.required_role_id}> role to start that shift.`,
-      ephemeral: true,
-    });
-  }
-
-  db.clockOn(community.id, interaction.user.id, shiftType.id);
-  await syncOnShiftRoles(community, interaction.user.id, memberRoleIds, true);
-
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Shift Started")
-    .setDescription(`🟢 You're clocked on to **${shiftType.name}**.`)
-    .setFooter({ text: "Use /shift off when you're done" })
-    .setTimestamp();
-
-  const payload = { embeds: [embed], components: [] };
-  if (interaction.isStringSelectMenu()) {
-    return interaction.update(payload);
-  }
-  return interaction.reply(payload);
-}
+const { baseEmbed, formatDuration } = require("../format");
+const panel = require("../panel");
 
 module.exports = {
-  isShiftOnSelect,
-
   data: new SlashCommandBuilder()
     .setName("shift")
-    .setDescription("Clock on, clock off, and manage your shift")
+    .setDescription("Clock on/off and check your shift status")
     .addSubcommand((sub) =>
       sub
         .setName("on")
         .setDescription("Clock on to a shift")
-        .addStringOption((o) =>
-          o.setName("type").setDescription("Shift type").setRequired(false).setAutocomplete(true)
+        .addStringOption((opt) =>
+          opt
+            .setName("type")
+            .setDescription("The type of shift you're starting")
+            .setRequired(true)
+            .setAutocomplete(true)
         )
     )
-    .addSubcommand((sub) => sub.setName("off").setDescription("Clock off your current shift"))
-    .addSubcommand((sub) => sub.setName("break").setDescription("Start or end a break during your shift"))
-    .addSubcommand((sub) => sub.setName("status").setDescription("Check your current shift status")),
+    .addSubcommand((sub) =>
+      sub.setName("off").setDescription("Clock off your current shift")
+    )
+    .addSubcommand((sub) =>
+      sub.setName("status").setDescription("See your current shift and weekly progress")
+    )
+    .addSubcommand((sub) =>
+      sub.setName("manage").setDescription("Open an interactive panel to start/end shifts and breaks")
+    ),
 
   async autocomplete(interaction) {
-    const community = getCommunity(interaction);
-    if (!community) return interaction.respond([]);
-
     const focused = interaction.options.getFocused().toLowerCase();
-    const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-    const types = db.listShiftTypesForRoles(community.id, memberRoleIds);
-    const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
-    await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
+    const roleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
+    const types = db.listShiftTypesForRoles(roleIds);
+    const filtered = types
+      .filter((t) => t.name.toLowerCase().includes(focused))
+      .slice(0, 25);
+    await interaction.respond(
+      filtered.map((t) => ({ name: t.name, value: t.name }))
+    );
   },
 
   async execute(interaction) {
-    const community = await requireCommunity(interaction);
-    if (!community) return;
-
+    const sub = interaction.options.getSubcommand();
     db.upsertUser({
       discord_id: interaction.user.id,
       username: interaction.user.username,
       avatar: interaction.user.avatar,
     });
-    db.addCommunityMember(community.id, interaction.user.id);
 
-    const sub = interaction.options.getSubcommand();
-    const discordId = interaction.user.id;
-    const active = db.getActiveShift(community.id, discordId);
-
-    if (sub === "on") {
-      if (active) {
-        return interaction.reply({ content: "You're already on shift — use `/shift off` first.", ephemeral: true });
-      }
-
-      const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-      const allowedTypes = db.listShiftTypesForRoles(community.id, memberRoleIds);
-
-      if (allowedTypes.length === 0) {
-        const anyTypes = db.listShiftTypes(community.id).length > 0;
-        const embed = baseEmbed(interaction.client, RED)
-          .setTitle("Can't Clock On")
-          .setDescription(
-            anyTypes
-              ? "None of your roles are set up to start a shift here. Ask an admin to check `/admin shifttype list`."
-              : "This server doesn't have any shift types configured yet. Ask an admin to run `/admin shifttype add`."
-          );
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-      }
-
-      const typeName = interaction.options.getString("type");
-      if (typeName) {
-        const shiftType = allowedTypes.find((t) => t.name.toLowerCase() === typeName.toLowerCase());
-        if (!shiftType) {
-          return interaction.reply({
-            content: `Couldn't find a shift type named **${typeName}** that you're allowed to start.`,
-            ephemeral: true,
-          });
-        }
-        return startShift(interaction, community, shiftType.id);
-      }
-
-      if (allowedTypes.length === 1) {
-        return startShift(interaction, community, allowedTypes[0].id);
-      }
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId(typeSelectId(discordId))
-        .setPlaceholder("What kind of shift would you like to start?")
-        .addOptions(allowedTypes.map((t) => ({ label: t.name, value: String(t.id) })));
-      const row = new ActionRowBuilder().addComponents(menu);
-
-      const embed = baseEmbed(interaction.client)
-        .setTitle("Choose a Shift Type")
-        .setDescription("Pick which kind of shift you're starting.");
-
-      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-    }
-
-    if (sub === "off") {
-      if (!active) {
-        return interaction.reply({ content: "You're not on shift right now.", ephemeral: true });
-      }
-
-      const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === active.shift_type_id);
-      const duration = db.clockOff(active.id);
-      const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-      await syncOnShiftRoles(community, discordId, memberRoleIds, false);
-
-      const fields = quotaFields(community, discordId, active.shift_type_id);
-
-      const embed = baseEmbed(interaction.client)
-        .setTitle("Shift Ended")
-        .setDescription(`You were on **${shiftType?.name ?? "shift"}** for **${formatDuration(duration)}**.`)
-        .addFields(fields.length ? fields : [{ name: "​", value: "No quota set for this shift type.", inline: false }])
-        .setTimestamp();
-
-      return interaction.reply({ embeds: [embed] });
-    }
-
-    if (sub === "break") {
-      if (!active) {
-        return interaction.reply({ content: "You're not on shift right now.", ephemeral: true });
-      }
-
-      if (active.break_start) {
-        db.endBreak(active.id);
-        const embed = baseEmbed(interaction.client)
-          .setTitle("Break Ended")
-          .setDescription("Welcome back — your shift is counting again.");
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-      }
-
-      db.startBreak(active.id);
-      const embed = baseEmbed(interaction.client, GOLD)
-        .setTitle("Break Started")
-        .setDescription("Enjoy your break. Run `/shift break` again to end it.");
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    if (sub === "status") {
-      if (!active) {
-        const embed = baseEmbed(interaction.client)
-          .setTitle("Shift Status")
-          .setDescription("🔴 You're not on shift right now.");
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-      }
-
-      const shiftType = db.listShiftTypes(community.id, { activeOnly: false }).find((t) => t.id === active.shift_type_id);
-      const onBreak = !!active.break_start;
-      const fields = quotaFields(community, discordId, active.shift_type_id);
-
-      const embed = baseEmbed(interaction.client)
-        .setTitle("Shift Status")
-        .setDescription(
-          onBreak
-            ? `☕ On break during **${shiftType?.name ?? "shift"}**, started <t:${active.start_time}:t> (<t:${active.start_time}:R>).`
-            : `🟢 On **${shiftType?.name ?? "shift"}**, started <t:${active.start_time}:t> (<t:${active.start_time}:R>).`
-        )
-        .addFields(fields.length ? fields : [SPACER])
-        .setTimestamp();
-
-      return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-  },
-
-  async handleSelect(interaction) {
-    const [, userId] = interaction.customId.split(":");
-    if (interaction.user.id !== userId) {
-      return interaction.reply({ content: "This isn't your shift prompt — run `/shift on` yourself.", ephemeral: true });
-    }
-    const community = await requireCommunity(interaction);
-    if (!community) return;
-    const shiftTypeId = Number(interaction.values[0]);
-    return startShift(interaction, community, shiftTypeId);
+    if (sub === "on") return handleOn(interaction);
+    if (sub === "off") return handleOff(interaction);
+    if (sub === "status") return handleStatus(interaction);
+    if (sub === "manage") return handleManage(interaction);
   },
 };
+
+async function handleManage(interaction) {
+  // A normal (non-ephemeral) reply, so this is a real message the bot posts
+  // in the channel and keeps editing in place as buttons/dropdowns are used.
+  const view = panel.currentPanel(interaction.client, interaction.user.id, interaction.user.username);
+  return interaction.reply(view);
+}
+
+async function handleOn(interaction) {
+  const typeName = interaction.options.getString("type", true);
+  const shiftType = db.getShiftTypeByName(typeName);
+
+  if (!shiftType) {
+    return interaction.reply({
+      content: `I don't recognize the shift type **${typeName}**. Use the autocomplete list, or ask an admin to add it with \`/admin shifttype add\`.`,
+      ephemeral: true,
+    });
+  }
+
+  if (shiftType.required_role_id && !interaction.member.roles.cache.has(shiftType.required_role_id)) {
+    return interaction.reply({
+      content: `You need the <@&${shiftType.required_role_id}> role to start a **${shiftType.name}** shift.`,
+      ephemeral: true,
+    });
+  }
+
+  const active = db.getActiveShift(interaction.user.id);
+  if (active) {
+    return interaction.reply({
+      content: `You're already clocked on to a shift. Use \`/shift off\` first.`,
+      ephemeral: true,
+    });
+  }
+
+  db.clockOn(interaction.user.id, shiftType.id);
+
+  const embed = baseEmbed(interaction.client)
+    .setTitle("Clocked On")
+    .setDescription(`You're now on **${shiftType.name}**.`)
+    .setFooter({ text: "Remember to /shift off when you're done" })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function handleOff(interaction) {
+  const active = db.getActiveShift(interaction.user.id);
+  if (!active) {
+    return interaction.reply({
+      content: "You're not currently on a shift.",
+      ephemeral: true,
+    });
+  }
+
+  const duration = db.clockOff(active.id);
+  const totals = db.weeklyTotalsByType(interaction.user.id);
+  const quotas = db.listQuotas();
+  const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
+  const shiftType = db
+    .listShiftTypes({ activeOnly: false })
+    .find((t) => t.id === active.shift_type_id);
+
+  const embed = baseEmbed(interaction.client)
+    .setTitle("Clocked Off")
+    .setDescription(
+      `Logged **${formatDuration(duration)}** on **${shiftType?.name ?? "shift"}**.`
+    )
+    .addFields(
+      totals.map((t) => {
+        const required = quotaByType.get(t.shift_type_id);
+        const hours = t.total_seconds / 3600;
+        let value = formatDuration(t.total_seconds);
+        if (required) {
+          value += ` / ${required}h`;
+          value += hours >= required ? " ✅ quota passed" : "";
+        }
+        return { name: t.shift_type_name, value, inline: true };
+      })
+    )
+    .setFooter({ text: "This week's totals shown above" })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function handleStatus(interaction) {
+  const active = db.getActiveShift(interaction.user.id);
+  const totals = db.weeklyTotalsByType(interaction.user.id);
+  const quotas = db.listQuotas();
+
+  const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
+  const overallQuota = quotaByType.get(null);
+
+  const embed = baseEmbed(interaction.client)
+    .setTitle("Shift Status")
+    .setDescription(
+      active
+        ? `🟢 On shift: **${
+            db.listShiftTypes({ activeOnly: false }).find((t) => t.id === active.shift_type_id)
+              ?.name
+          }** since <t:${active.start_time}:t>`
+        : "🔴 Not currently on shift"
+    );
+
+  let totalSeconds = 0;
+  for (const t of totals) {
+    totalSeconds += t.total_seconds;
+    const required = quotaByType.get(t.shift_type_id);
+    const hours = t.total_seconds / 3600;
+    let label = formatDuration(t.total_seconds);
+    if (required) {
+      label += ` / ${required}h`;
+      label += hours >= required ? " ✅ passed" : " ❌ short";
+    }
+    embed.addFields({ name: t.shift_type_name, value: label, inline: true });
+  }
+
+  if (overallQuota) {
+    const overallHours = totalSeconds / 3600;
+    embed.addFields({
+      name: "Weekly quota (overall)",
+      value: `${formatDuration(totalSeconds)} / ${overallQuota}h${
+        overallHours >= overallQuota ? " ✅ passed" : ""
+      }`,
+    });
+  }
+
+  embed.setFooter({ text: "Full history is on the dashboard website" }).setTimestamp();
+
+  return interaction.reply({ embeds: [embed], ephemeral: true });
+}

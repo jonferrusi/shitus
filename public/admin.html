@@ -3,18 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shiftus — Admin</title>
+  <title>Duty Log — Admin</title>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="sidebar-brand"><span class="dot"></span> Shiftus</div>
-
-      <div class="community-switch">
-        <select id="community-select"></select>
-      </div>
-
+      <div class="sidebar-brand"><span class="dot"></span> Duty Log</div>
       <nav class="sidebar-nav">
         <a href="/dashboard.html" class="nav-link">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
@@ -41,74 +36,25 @@
           <h1>Admin</h1>
         </div>
 
-        <div id="billing-banner" class="section" style="display:none;">
-          <div class="error-banner" style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
-            <span id="billing-banner-text">This community doesn't have an active subscription — bot features (clocking on, logging time) are disabled.</span>
-            <button class="btn btn-accent" id="billing-subscribe-btn" style="flex-shrink:0;">Subscribe</button>
-          </div>
-        </div>
-
         <div id="denied" class="section" style="display:none;">
           <div class="error-banner">You don't have admin access on this server.</div>
         </div>
 
-        <div id="no-community" class="section" style="display:none;">
-          <div class="empty">No community selected. Join or create one from the Dashboard first.</div>
-        </div>
-
-        <div id="admin-content">
-          <div class="section">
-            <div class="section-head"><h2>Live Now</h2></div>
-            <div class="card">
-              <table>
-                <thead>
-                  <tr><th>Member</th><th>Type</th><th class="mono">Elapsed</th><th></th></tr>
-                </thead>
-                <tbody id="active-body"></tbody>
-              </table>
-              <div id="active-empty" class="empty" style="display:none;">Nobody is on shift right now.</div>
-            </div>
-          </div>
-
+        <div id="admin-content" style="display:none;">
           <div class="section">
             <div class="section-head"><h2>Roster — This Week</h2></div>
-            <div class="card">
+            <div class="card" style="padding: 8px 24px;">
               <table>
                 <thead>
-                  <tr><th>Member</th><th>Primary Type</th><th class="mono">Hours</th><th>Quota</th></tr>
+                  <tr>
+                    <th>Member</th>
+                    <th class="mono">Hours</th>
+                    <th>Quota</th>
+                  </tr>
                 </thead>
                 <tbody id="roster-body"></tbody>
               </table>
-              <div id="roster-empty" class="empty" style="display:none;">No hours logged yet this week.</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-head"><h2>Add Time</h2></div>
-            <div class="card">
-              <form id="admin-add-form" class="form-row">
-                <select id="admin-add-member" required></select>
-                <select id="admin-add-type" required></select>
-                <input type="date" id="admin-add-date" required />
-                <input type="number" id="admin-add-hours" min="0.25" max="24" step="0.25" placeholder="Hours" required />
-                <button class="btn btn-accent" type="submit">Add Time</button>
-              </form>
-              <div id="admin-add-message" style="font-size:13px; margin-top:10px; display:none;"></div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-head"><h2>Remove Time</h2></div>
-            <div class="card">
-              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
-                Removes hours from a member's most recently logged shifts, newest first.
-              </p>
-              <form id="admin-remove-form" class="form-row">
-                <select id="admin-remove-member" required></select>
-                <input type="number" id="admin-remove-hours" min="0.25" step="0.25" placeholder="Hours" required />
-                <button class="btn btn-danger-solid" type="submit">Remove Time</button>
-              </form>
-              <div id="admin-remove-message" style="font-size:13px; margin-top:10px; display:none;"></div>
+              <div id="roster-empty" class="empty" style="display:none;">No one has logged a shift yet.</div>
             </div>
           </div>
 
@@ -116,197 +62,56 @@
             <div class="section-head"><h2>Shift Types</h2></div>
             <div class="card">
               <table>
-                <thead>
-                  <tr><th>Name</th><th>Access</th><th></th></tr>
-                </thead>
+                <thead><tr><th>Name</th><th>Restricted To</th><th></th></tr></thead>
                 <tbody id="shifttypes-body"></tbody>
               </table>
               <form id="shifttype-form" class="form-row">
-                <input type="text" id="shifttype-name" placeholder="New shift type name" required />
-                <select id="shifttype-role"></select>
+                <input type="text" id="shifttype-name" placeholder="e.g. Training Shift" required />
+                <select id="shifttype-role">
+                  <option value="">Anyone can start it</option>
+                </select>
                 <button class="btn btn-accent" type="submit">Add Type</button>
               </form>
             </div>
           </div>
 
           <div class="section">
-            <div class="section-head"><h2>Quotas</h2></div>
+            <div class="section-head"><h2>Weekly Quotas</h2></div>
             <div class="card">
               <table>
-                <thead>
-                  <tr><th>Applies To</th><th class="mono">Hours</th><th>Period</th><th></th></tr>
-                </thead>
+                <thead><tr><th>Applies to</th><th class="mono">Hours / week</th></tr></thead>
                 <tbody id="quotas-body"></tbody>
               </table>
               <form id="quota-form" class="form-row">
-                <select id="quota-type"></select>
-                <input type="number" id="quota-hours" min="0" step="0.5" placeholder="Hours" required />
-                <select id="quota-period">
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Biweekly</option>
-                  <option value="monthly">Monthly</option>
+                <select id="quota-type">
+                  <option value="">Overall (all shift types)</option>
                 </select>
+                <input type="number" id="quota-hours" min="0" step="0.5" placeholder="Hours" required />
                 <button class="btn btn-accent" type="submit">Set Quota</button>
               </form>
             </div>
           </div>
 
           <div class="section">
-            <div class="section-head"><h2>Week Schedule</h2></div>
-            <div class="card">
-              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
-                When the weekly quota clock resets, in UTC.
-              </p>
-              <form id="schedule-form" class="form-row">
-                <select id="schedule-day">
-                  <option value="0">Sunday</option>
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                </select>
-                <select id="schedule-hour"></select>
-                <button class="btn btn-accent" type="submit">Save</button>
-              </form>
-              <div id="schedule-message" style="font-size:13px; margin-top:10px; display:none;"></div>
-              <div style="margin:14px 0; border-top:1px solid var(--hairline);"></div>
-              <button class="btn btn-danger-solid" id="force-end-week-btn">Force End Week Now</button>
-              <p style="margin:8px 0 0; font-size: 12px; color: var(--muted);">
-                Saves a snapshot report of the current week and starts a fresh one immediately.
-              </p>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-head"><h2>Quota Reminders</h2></div>
-            <div class="card">
-              <p style="margin:0 0 4px; font-size: 13px; color: var(--muted);">
-                Once a day, members below the threshold get a DM. Leave the day blank to disable.
-              </p>
-              <form id="reminders-form" class="form-row">
-                <select id="reminder-day">
-                  <option value="">Disabled</option>
-                  <option value="0">Sunday</option>
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                </select>
-                <select id="reminder-hour"></select>
-                <input type="number" id="reminder-threshold" min="0" step="0.5" placeholder="Below hours" />
-                <button class="btn btn-accent" type="submit">Save</button>
-              </form>
-              <div id="reminders-message" style="font-size:13px; margin-top:10px; display:none;"></div>
-              <div style="margin:14px 0; border-top:1px solid var(--hairline);"></div>
-              <div class="quota-row-head"><span class="name">Send one now</span></div>
-              <form id="reminder-send-form" class="form-row">
-                <select id="reminder-send-member"></select>
-                <button class="btn" type="submit">Send Reminder</button>
-              </form>
-              <div id="reminder-send-message" style="font-size:13px; margin-top:10px; display:none;"></div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-head"><h2>On-Shift Roles</h2></div>
-            <div class="card">
-              <form id="role-config-form">
-                <div class="quota-row">
-                  <div class="quota-row-head"><span class="name">On-Shift Role</span></div>
-                  <select id="role-onshift"><option value="">None</option></select>
-                </div>
-                <div class="quota-row">
-                  <div class="quota-row-head"><span class="name">Supervisor Check Role</span></div>
-                  <select id="role-supervisor"><option value="">None</option></select>
-                </div>
-                <div class="quota-row">
-                  <div class="quota-row-head"><span class="name">Active Supervisor Role</span></div>
-                  <select id="role-activesupervisor"><option value="">None</option></select>
-                </div>
-                <div class="quota-row">
-                  <div class="quota-row-head"><span class="name">LOA Role</span></div>
-                  <select id="role-loa"><option value="">None</option></select>
-                </div>
-                <button class="btn btn-accent" type="submit">Save Roles</button>
-              </form>
-              <div id="role-config-message" style="font-size:13px; margin-top:10px; display:none;"></div>
-            </div>
-          </div>
-
-          <div class="section">
             <div class="section-head"><h2>Permissions</h2></div>
             <div class="card">
-              <div class="quota-row">
-                <div class="quota-row-head"><span class="name">Admin</span></div>
-                <div id="perm-admin-list"></div>
+              <p style="margin:0 0 14px; font-size: 13px; color: var(--muted);">
+                Admins can manage shift types/quotas/roster. Add Time roles can log time by hand on the dashboard.
+                Roles from the <span class="mono" style="color: var(--accent)">.env</span> file always have access too, on top of what's granted here.
+              </p>
+              <div class="quota-row-head" style="margin-bottom: 8px;"><span class="name">Admin</span></div>
+              <div id="admin-roles-list" style="margin-bottom: 14px;"></div>
+              <div class="form-row" style="margin-top:0; margin-bottom: 22px;">
+                <select id="admin-role-select"></select>
+                <button class="btn btn-ghost" id="admin-role-add" type="button">Grant Admin</button>
               </div>
-              <div class="quota-row">
-                <div class="quota-row-head"><span class="name">Add Time</span></div>
-                <div id="perm-addtime-list"></div>
-              </div>
-              <form id="perm-form" class="form-row">
-                <select id="perm-role"></select>
-                <select id="perm-type">
-                  <option value="admin">Admin</option>
-                  <option value="add_time">Add Time</option>
-                </select>
-                <button class="btn btn-accent" type="submit">Grant</button>
-              </form>
-            </div>
-          </div>
 
-          <div class="section">
-            <div class="section-head"><h2>LOA Requests</h2></div>
-            <div class="card">
-              <div class="controls-row" style="margin-top:0; margin-bottom:14px;">
-                <button class="btn" id="loa-tab-pending" type="button">Pending</button>
-                <button class="btn btn-ghost" id="loa-tab-history" type="button">History</button>
-              </div>
-              <div id="loa-pending-view">
-                <table>
-                  <thead>
-                    <tr><th>Member</th><th>Reason</th><th class="mono">Days</th><th>Submitted</th><th></th></tr>
-                  </thead>
-                  <tbody id="loa-pending-body"></tbody>
-                </table>
-                <div id="loa-pending-empty" class="empty" style="display:none;">No pending requests.</div>
-              </div>
-              <div id="loa-history-view" style="display:none;">
-                <table>
-                  <thead>
-                    <tr><th>Member</th><th>Status</th><th>Reviewer</th><th>Reviewed</th></tr>
-                  </thead>
-                  <tbody id="loa-history-body"></tbody>
-                </table>
-                <div id="loa-history-empty" class="empty" style="display:none;">No history yet.</div>
-              </div>
-              <div id="loa-warning" class="error-banner" style="display:none; margin-top:14px;"></div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-head"><h2>Weekly Reports</h2></div>
-            <div class="card">
+              <div class="quota-row-head" style="margin-bottom: 8px;"><span class="name">Add Time</span></div>
+              <div id="addtime-roles-list" style="margin-bottom: 14px;"></div>
               <div class="form-row" style="margin-top:0;">
-                <select id="report-week-select"></select>
-                <input type="date" id="report-jump-date" />
-                <button class="btn" id="report-jump-btn" type="button">Jump to Week</button>
-                <button class="btn btn-ghost" id="report-regenerate-btn" type="button">Regenerate</button>
+                <select id="addtime-role-select"></select>
+                <button class="btn btn-ghost" id="addtime-role-add" type="button">Grant Add Time</button>
               </div>
-
-              <div id="report-summary" style="margin-top:18px;"></div>
-
-              <table style="margin-top:14px;">
-                <thead>
-                  <tr><th>Member</th><th>Primary Type</th><th class="mono">Hours</th><th>Quota</th></tr>
-                </thead>
-                <tbody id="report-body"></tbody>
-              </table>
-              <div id="report-empty" class="empty" style="display:none;">No hours logged that week.</div>
             </div>
           </div>
         </div>

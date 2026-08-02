@@ -1,28 +1,25 @@
-# Shiftus — Shift Tracker Bot
+# Duty Log — Shift Tracker Bot
 
-A multi-tenant Discord bot + web dashboard for tracking staff shifts: clock
-on/off, different shift types (Patrol, Supervisory, or anything you add),
-weekly quotas, and a website where people can see their hours. One Shiftus
-install can serve many independent Discord servers ("communities") at once —
-each with its own shift types, quotas, roles, and roster, invite-linked from
-the dashboard rather than configured per-deployment.
+A Discord bot + web dashboard for tracking staff shifts: clock on/off, different
+shift types (Normal Patrol, Supervisory, or anything you add), weekly quotas,
+and a website where people can see their hours. No CAD/dispatch — just shift
+tracking.
 
 ## What you get
 
-- **`/shift on [type]`** — clock on to a shift (dropdown if the server has more than one type)
+- **`/shift on`** — clock on to a shift (pick a type from the autocomplete list)
 - **`/shift off`** — clock off, see how long you were on and this week's totals
-- **`/shift break`** — start or end a break during an active shift
 - **`/shift status`** — quick check of your current shift + weekly progress
-- **`/leaderboard [type]`** — weekly leaderboard, optionally filtered to one shift type
-- **`/loa request`** — opens a modal to submit a Leave of Absence request (reason + duration) for admin review
-- **`/activeshifts`** — admin-only: everyone currently on shift, each with a Force End button
-  (ends the shift, removes on-shift roles, and DMs the member who ended it and why)
+- **`/shift manage`** — an interactive panel the bot posts in the channel:
+  a **Start Shift** button → a dropdown to pick the shift type → the panel
+  updates to show **Start Break** / **End Break** and **End Shift** buttons
+  while you're on. Everything happens on that one message.
+- **`/shiftleaderboard`** — pick a shift type from a dropdown, then see the
+  weekly leaderboard for it: 🟢 for people over quota, 🔴 for people under it
 - **`/admin shifttype add|remove|restrict|list`** — manage shift types, including
   restricting one to a specific Discord role (e.g. only Supervisors can start
   a Supervisory Shift)
 - **`/admin quota set|list`** — set a weekly hour quota, either overall or per shift type
-- **`/admin roles onshift|supervisor|activesupervisor|loa|list`** — configure the
-  Discord roles assigned on clock-on/off and on LOA approval (see "On-shift roles" below)
 - **`/admin permissions add|remove|list`** — grant/revoke Admin or Add Time
   access to a role directly from Discord, no `.env` editing or restart needed
 - A dashboard website (**Sign in with Discord**) showing:
@@ -40,8 +37,8 @@ the dashboard rather than configured per-deployment.
     restricting a shift type to one role) without touching Discord, and a
     **Permissions** section to grant/revoke Admin or Add Time access per role
 
-Everything lives in one local SQLite database file (`data.sqlite`), so
-anything logged in Discord shows up on the site immediately.
+The bot and the website share one local SQLite database file (`data.sqlite`),
+so anything logged in Discord shows up on the site immediately.
 
 ## 1. Create the Discord application
 
@@ -53,12 +50,17 @@ anything logged in Discord shows up on the site immediately.
    (must match `OAUTH_REDIRECT_URI` in your `.env` exactly).
 5. **OAuth2 → URL Generator** → scopes: `bot`, `applications.commands` →
    permissions: at least `Send Messages`, `Use Slash Commands` → open the
-   generated URL. You don't invite the bot to a fixed server up front —
-   anyone can invite it to a server they manage and link it from the
-   dashboard (see "Communities" below).
-6. Put your own Discord user ID in `PLATFORM_OWNER_DISCORD_ID` — any
-   community you create is auto-activated (no subscription needed), and
-   you can access every community for support/debugging.
+   generated URL and invite the bot to your server.
+6. Turn on **Developer Mode** in Discord (User Settings → Advanced), then
+   right-click your server icon → **Copy Server ID** → that's `DISCORD_GUILD_ID`.
+7. Right-click whichever role(s) should count as "admin" (able to manage
+   shift types/quotas and see the roster) → Copy Role ID → put those,
+   comma-separated, in `ADMIN_ROLE_IDS`. Server members with the
+   **Administrator** permission always count as admin too.
+8. Right-click whichever role(s) should be allowed to manually **add time**
+   on the website → Copy Role ID → put those, comma-separated, in
+   `ADD_TIME_ROLE_IDS`. Anyone without one of these roles (or an admin role)
+   won't see the "Log Time" form at all. Admins can always add time too.
 
 ## 2. Install & configure
 
@@ -70,9 +72,7 @@ cp env.example .env
 
 ## 3. Register the slash commands
 
-Run this once, and again any time you change a command's options — it
-registers them globally, so they work in every server the bot is in
-(new servers also get them instantly the moment their community is created):
+Run this once, and again any time you change a command's options:
 
 ```bash
 npm run deploy-commands
@@ -90,53 +90,38 @@ This runs both the Discord bot and the website together. You should see
 (If you ever want them as separate processes instead, `npm run bot-only`
 and `npm run web-only` still work individually.)
 
-Open `http://localhost:3000`, click **Sign in with Discord**, then use the
-**+** button next to the community switcher to create a community from a
-Discord server you manage (or join one you've been given an invite code
-for).
-
-## Communities
-
-Shiftus is multi-tenant: one install can serve many Discord servers, each
-as its own **community** with its own shift types, quotas, roles, and
-roster. To set one up:
-
-- **Create** — from the dashboard, pick a Discord server where you have
-  **Manage Server** permission. This deploys Shiftus's slash commands to
-  that server instantly and seeds nothing by default — add shift types
-  from the Admin page or `/admin shifttype add`.
-- **Join** — anyone with a community's invite code (shown on its Admin
-  page) and Discord membership in that server can join it from the
-  dashboard's **+** panel.
-- Communities you've created or joined show up in the sidebar switcher on
-  both the Dashboard and Admin pages.
+Open `http://localhost:3000`, click **Sign in with Discord**. You'll need to
+already be a member of the server for login to work.
 
 ## Default data
 
-New communities start with no shift types or quotas configured. Add some
-(e.g. "Patrol", "Supervisory Shift", "Training Shift") with
-`/admin shifttype add` or from the Admin page — no code changes needed.
+The database seeds two shift types the first time it's created: **Normal
+Patrol** and **Supervisory Shift**. Add more (e.g. "Training Shift", "K9
+Patrol") with `/admin shifttype add` or from the Admin page on the site — no
+code changes needed. No quotas are set by default; use `/admin quota set` or
+the Admin page to set them.
 
 ## Notes on quotas
 
 - A quota can apply to one specific shift type, or be left as "Overall" to
   require a certain number of hours across *all* shift types combined per week.
   You can set both an overall quota and per-type quotas at the same time.
-- Each community has its own week boundary (defaults to Monday 00:00 UTC).
+- The week resets on the day set by `WEEK_START_DAY` in `.env` (default `1` =
+  Monday), at midnight server time.
 - Removing a shift type just hides it from `/shift on` and the admin lists —
   past shifts logged under it are kept for history/roster purposes.
 
 ## Roles and permissions
 
-There are three kinds of access, granted per-community and effective
-immediately (no restart needed) — from inside the app (`/admin permissions
-add` in Discord, or the Permissions section on the Admin page), or as a
-global fallback listed in `.env` (`ADMIN_ROLE_IDS` / `ADD_TIME_ROLE_IDS`,
-mainly useful for the platform operator's own communities):
+There are three kinds of access, and each can be granted two ways — listed
+in `.env` (`ADMIN_ROLE_IDS` / `ADD_TIME_ROLE_IDS`), or granted from inside
+the app (`/admin permissions add` in Discord, or the Permissions section on
+the Admin page) — both count, so you don't have to touch `.env` or restart
+anything for day-to-day changes:
 
 - **Admin** — manage shift types, quotas, restrictions, and permissions;
-  view the roster. The Discord server's owner, and anyone with Discord's own
-  **Administrator** permission on that server, always count as admin too.
+  view the roster. Server members with Discord's own **Administrator**
+  permission always count as admin too.
 - **Add Time** — can use the "Log Time" form on the website to add a
   completed shift by hand.
 - **Shift-type restrictions** — separate from the above, any individual
@@ -144,99 +129,33 @@ mainly useful for the platform operator's own communities):
   a Supervisory Shift) via `/admin shifttype add`/`restrict`, or the
   dropdown next to each shift type on the Admin page. Leave it unrestricted
   and anyone can start it. This is checked everywhere someone can start a
-  shift: `/shift on`, and the website.
+  shift: `/shift on`, the `/shift manage` panel, and the website.
 
-## On-shift roles
+## The Shift Manager panel (`/shift manage`)
 
-Configure up to four roles per community with `/admin roles ...` or the
-Admin page's **On-Shift Roles** section:
-
-- **On-Shift Role** — assigned to anyone currently on any shift, removed the
-  moment they clock off (including a Force End).
-- **Supervisor Check Role** — a role members already have; if someone with it
-  clocks on, they also get the **Active Supervisor Role**.
-- **Active Supervisor Role** — assigned alongside the On-Shift Role, only for
-  members who hold the Supervisor Check Role.
-- **LOA Role** — assigned automatically when an LOA request is approved.
-
-All of this is best-effort: if the bot's own role is ranked below the one
-it's trying to assign, or it lacks Manage Roles, the role change is skipped
-and logged rather than blocking the clock-on/off itself.
-
-## Quota periods and the admin panel
-
-Each quota (overall or per shift type) has its own period — Weekly,
-Biweekly (a rolling 14-day window), or Monthly (calendar month, UTC) — set
-from the Admin page's **Quotas** section. Progress against a quota is always
-computed over that quota's own period, everywhere it's shown: the dashboard,
-`/shift on|off|status`, and the roster's Met/Below badge.
-
-The rest of the Admin page: **Live Now** (with a Force End button per
-active shift — ends it, removes on-shift roles, and DMs the member),
-**Remove Time** (deducts hours from a member's most recent shifts, newest
-first), **Week Schedule** (when the quota week resets, plus **Force End
-Week Now** to close the current week early and start a fresh one — this
-saves a snapshot report of the week so far), and **Quota Reminders**
-(a once-a-day DM to anyone below a hours threshold, plus a manual "send one
-now" for a specific member) round out the rest of what `/admin` covers from
-Discord.
-
-## Leave of Absence (LOA)
-
-Members submit a request with `/loa request` (a modal: reason + duration in
-days). Admins review it from the Admin page's **LOA Requests** section:
-**Approve** assigns the configured LOA role and renames the member to
-`LOA | <name>` (capped at 32 characters, original nickname remembered for
-later), while still recording the approval even if the role/rename fails
-(a warning banner explains why). **Deny** just marks it denied. A
-**History** tab shows every past decision and who made it.
-
-## Weekly reports and the background scheduler
-
-A background job (`npm start` runs it in the same process as the bot and
-website — `npm run bot-only`/`web-only` don't) checks every community once
-an hour for two things:
-
-- **Quota reminders** — if it's the configured reminder day and hour, and a
-  reminder hasn't already gone out today, every member below the configured
-  hour threshold gets a DM (hours logged, goal, progress bar, hours still
-  needed). The Admin page's **Quota Reminders** section also has a "send one
-  now" for any individual member, any time, regardless of the schedule.
-- **Week rollover** — once a community's week has moved on, the previous
-  week gets snapshotted into a report automatically (same as clicking Force
-  End Week Now, just triggered by time passing instead of a click).
-
-The Admin page's **Weekly Reports** section lets you pick any past week (or
-jump to one by date) to see a summary — total hours, active members, how
-many met the quota — and the full per-member breakdown. A week that was
-never snapshotted still loads instantly, computed on demand from the raw
-shift data and saved at that point; **Regenerate** recomputes a week after
-backdating or correcting shifts.
-
-Discord API hiccups (rate limits, a DM to someone with DMs closed, an
-interaction that got answered a moment too late) are caught globally and
-logged rather than crashing the process.
-
-## Clocking on and off
-
-- `/shift on` / `/shift off` / `/shift break` / `/shift status` are the
-  primary way to clock on Discord. `/shift on` shows a dropdown if the
-  server has more than one shift type you're allowed to start.
+- Running the command posts a normal message from the bot (not ephemeral) —
+  it's a real panel that stays in the channel and updates in place as
+  buttons/dropdowns are used, rather than disappearing.
+- The panel is personal: only the person who ran `/shift manage` can use
+  its buttons. If someone else clicks it, the bot tells them to run their
+  own `/shift manage` instead — it won't touch the original user's shift.
 - **Breaks** pause the clock without ending the shift: time spent on break
   is subtracted from the shift's duration when it's totaled up. If a shift
   is ended while still on break, the in-progress break is automatically
   closed out first so nothing is double-counted.
-- The **website's Start Shift/Start Break/End Break/End Shift buttons use
-  the exact same clock** as the Discord commands, so someone can start a
-  shift on Discord and end it from the website (or vice versa) with no
-  issues.
+- `/shift on`/`/shift off` and the panel both read/write the same shift
+  data, so people can mix and match — clock on with the panel, end with
+  the slash command, whatever's convenient. The **website's Start
+  Shift/Start Break/End Break/End Shift buttons use the exact same clock**
+  too, so someone can start a shift on Discord and end it from the website
+  (or vice versa) with no issues.
 
 ## Leaderboard and quota colors
 
-- `/leaderboard` shows a dropdown of every shift type plus "Overall" (or pass
-  `type` directly to skip straight to it). Ranks the top 15 people by hours
-  logged **this week** for that type, with progress bars and a ✅ for anyone
-  who's met the quota.
+- `/shiftleaderboard` shows a dropdown of every shift type plus "Overall".
+  Whichever one is picked, it ranks the top 15 people by hours logged **this
+  week** for that type, with a colored dot per person: 🟢 if they've met or
+  passed the quota for that type, 🔴 if they haven't, ⚪ if no quota is set.
 - The same "over quota = green, under quota = red" treatment is used on the
   website's Admin roster page, and every quota bar on the dashboard has an
   explicit "Quota met" / "Below quota" label rather than relying on color alone.
@@ -250,12 +169,10 @@ you ever query the database directly.
 
 ## Deploying
 
-Shiftus is one Node.js process (bot + website + scheduler) plus a SQLite
-file — one instance serves every community that links a Discord server to
-it, so there's nothing for individual communities to host themselves. It
-runs as-is on a small VPS or a host like Railway/Render/Fly: set the
-environment variables from `env.example`, point `OAUTH_REDIRECT_URI` (and
-the matching Discord Developer Portal redirect) at your real domain, run
-`npm run deploy-commands` once, then `npm start`. Keep `data.sqlite`
-(and the `sessions` table alongside it) on a persistent volume — it's the
-only state that isn't reconstructible from Discord.
+This is a plain Node.js app with a SQLite file, so it runs as-is on a small
+VPS or a host like Railway/Render/Fly: set the same environment variables
+there, update `OAUTH_REDIRECT_URI` (and the matching Discord Developer
+Portal redirect) to your real domain, run `npm run deploy-commands` once,
+then `npm start` (it launches both the bot and the website together). Keep
+`data.sqlite` on a persistent volume — it's the only state that isn't
+reconstructible from Discord.

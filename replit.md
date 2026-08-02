@@ -1,37 +1,33 @@
-# Shiftus — Shift Tracker Bot
+# Duty Log — Shift Tracker Bot
 
-A multi-tenant Discord bot + Express web dashboard for tracking staff
-shifts: clock on/off, shift types, weekly/biweekly/monthly quotas,
-leaderboards, LOA requests, and weekly reports — across many independent
-Discord communities from one deployment.
+A Discord bot + Express web dashboard for tracking staff shifts on a single
+Discord server: clock on/off, shift types, weekly quotas, a leaderboard, and
+a website where people can see their hours.
 
 ## Stack
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 18+
 - **Bot**: discord.js 14
-- **Web server**: Express (with express-session, backed by a SQLite-based session store)
+- **Web server**: Express (with express-session)
 - **Database**: SQLite via better-sqlite3 (`data.sqlite` — created automatically on first run)
-- **Billing**: Stripe (optional — subscription enforcement is a no-op if `STRIPE_SECRET_KEY` isn't set)
-- **Auth**: Discord OAuth2 (`identify guilds` scope)
+- **Auth**: Discord OAuth2 (`identify` scope), guild membership checked with the bot token
 
 ## How to run
 
-The workflow `Start application` runs `npm start`, which launches the bot,
-the web server, and the hourly background scheduler together via
-`src/index.js`. Set `PORT` for the Replit webview (defaults to 3000).
+The workflow `Start application` runs `npm start`, which launches both the
+bot and the web server together via `src/index.js`. Set `PORT` for the
+Replit webview (defaults to 3000).
 
-To (re-)register slash commands globally — run once after setup or when a
-command's options change; new communities also get an instant guild-scoped
-registration automatically when they're created:
+To (re-)register slash commands — run once after setup or when a command's
+options change:
 
 ```
 node src/deploy-commands.js
 ```
 
 > **Note:** The bot must be invited with the `bot` **and**
-> `applications.commands` scopes for slash commands to work. Communities
-> link their own Discord server from the dashboard — there's no single
-> guild ID to configure for the whole deployment.
+> `applications.commands` scopes for slash commands to work, and needs
+> `DISCORD_GUILD_ID` set to the one server it manages.
 
 ## Environment variables (set in Replit Secrets / Env Vars)
 
@@ -42,12 +38,12 @@ See `env.example` for the full list with descriptions. In short:
 | `DISCORD_TOKEN` | Bot tab → Reset Token in Discord Developer Portal |
 | `DISCORD_CLIENT_ID` | OAuth2 → General → Client ID |
 | `DISCORD_CLIENT_SECRET` | OAuth2 → General → Client Secret |
-| `PLATFORM_OWNER_DISCORD_ID` | Your own Discord user ID — communities you create are auto-activated, and the bot grants you an Administrator role in every server it joins |
-| `ADMIN_ROLE_IDS` / `ADD_TIME_ROLE_IDS` | Optional global fallback role IDs, comma-separated |
+| `DISCORD_GUILD_ID` | Right-click the server icon → Copy Server ID (Developer Mode on) |
+| `ADMIN_ROLE_IDS` / `ADD_TIME_ROLE_IDS` | Comma-separated role IDs, granted here or from `/admin permissions` |
 | `OAUTH_REDIRECT_URI` | Must match a redirect in Discord Developer Portal exactly |
 | `SESSION_SECRET` | Any long random string |
 | `PORT` | Set for the Replit webview |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_ID` | Optional — leave blank to run without billing enforcement |
+| `WEEK_START_DAY` | Day the quota week resets on (0=Sunday … 6=Saturday) |
 
 ## Discord Developer Portal — redirect URI
 
@@ -59,24 +55,19 @@ exactly (e.g. `https://<your-repl-domain>/auth/callback`).
 
 ```
 src/
-  index.js            — entry point: starts bot + web server + scheduler
-  bot.js              — Discord client setup, owner auto-role, interaction routing
-  server.js           — Express app, OAuth2 routes, all /api/communities/:id/* routes
+  index.js            — entry point: starts bot + web server together
+  bot.js              — Discord client setup, interaction routing
+  server.js           — Express app, OAuth2 routes, all /api routes
   db.js               — SQLite schema + every query
-  discordApi.js       — Discord REST helpers (roles, DMs, guild info, command deployment)
-  communityContext.js — resolves the community/admin/subscription context for bot interactions
-  shiftActions.js      — on-shift role sync + Force End, shared by the bot and the website
-  reminders.js         — quota reminder DM content, shared by the manual send and the scheduler
-  stripe.js            — Checkout sessions + webhook handling
-  scheduler.js          — hourly reminders + week-rollover job
-  sessionStore.js       — SQLite-backed express-session store
-  panel.js              — legacy button/dropdown shift panel
-  commands/             — slash command handlers + the shared command manifest
-  deploy-commands.js    — registers slash commands globally with the Discord API
+  discordApi.js       — Discord REST helpers (OAuth exchange, guild member/roles)
+  format.js           — shared embed styling + duration formatting
+  panel.js            — the /shift manage button/dropdown panel
+  commands/            — slash command handlers (shift, admin, leaderboard)
+  deploy-commands.js   — registers slash commands with the Discord API
 public/
   index.html    — marketing landing page + Discord sign-in
-  dashboard.html — user dashboard (community switcher, clock, quotas, history)
-  admin.html     — admin panel (all sections described in README.md)
+  dashboard.html — user dashboard (clock, quotas, log time, history)
+  admin.html     — admin panel (roster, shift types, quotas, permissions)
   css/ js/       — static assets
 data.sqlite      — created automatically on first run
 ```

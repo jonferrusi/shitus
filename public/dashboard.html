@@ -3,31 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shiftus — Dashboard</title>
+  <title>Duty Log — Dashboard</title>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="sidebar-brand"><span class="dot"></span> Shiftus</div>
-
-      <div class="community-switch">
-        <select id="community-select"></select>
-        <button class="btn btn-ghost" id="add-community-btn" title="Join or create a community">+</button>
-      </div>
-      <div id="add-community-panel" class="card" style="display:none; margin-bottom:16px;">
-        <div class="quota-row-head"><span class="name">Add a community</span></div>
-        <form id="join-form" class="form-row">
-          <input type="text" id="join-slug" placeholder="Invite code" required style="flex:1;" />
-          <button class="btn" type="submit">Join</button>
-        </form>
-        <div id="join-message" style="font-size:13px; margin-top:8px; display:none;"></div>
-        <div style="margin:14px 0; border-top:1px solid var(--hairline);"></div>
-        <div class="quota-row-head"><span class="name">Create from a server you manage</span></div>
-        <div id="eligible-guilds" style="margin-top:10px;"></div>
-        <div id="create-message" style="font-size:13px; margin-top:8px; display:none;"></div>
-      </div>
-
+      <div class="sidebar-brand"><span class="dot"></span> Duty Log</div>
       <nav class="sidebar-nav">
         <a href="/dashboard.html" class="nav-link active">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
@@ -48,20 +30,7 @@
     </aside>
 
     <main class="main-content">
-      <div class="page" id="empty-state" style="display:none;">
-        <div class="page-head">
-          <p class="eyebrow">Welcome</p>
-          <h1>No communities yet</h1>
-        </div>
-        <div class="section">
-          <div class="empty">
-            Join a community you've been invited to with its invite code, or create one from a
-            Discord server you manage, using the <strong>+</strong> button in the sidebar.
-          </div>
-        </div>
-      </div>
-
-      <div class="page" id="app-content">
+      <div class="page">
         <div class="page-head">
           <p class="eyebrow">Current Status</p>
           <h1>Overview</h1>
@@ -82,7 +51,7 @@
         </div>
 
         <div class="section">
-          <div class="section-head"><h2>Quota Progress</h2></div>
+          <div class="section-head"><h2>This Week</h2></div>
           <div id="quotas" class="card"></div>
         </div>
 

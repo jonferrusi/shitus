@@ -3,19 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shiftus — Shift tracking for your Discord community</title>
-  <meta name="description" content="Shiftus is shift tracking built for Discord: clock on/off, weekly quotas, leaderboards, and reports for every community your server runs." />
+  <title>Duty Log — Shift tracking for your Discord server</title>
+  <meta name="description" content="Duty Log is shift tracking built for Discord: clock on/off, weekly quotas, leaderboards, and a real dashboard for your server." />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <div class="marketing">
     <header class="marketing-header">
-      <div class="marketing-brand"><span class="dot"></span> Shiftus</div>
+      <div class="marketing-brand"><span class="dot"></span> Duty Log</div>
       <nav class="marketing-nav">
         <a href="#how-it-works">How it works</a>
-        <a href="#faq">Docs</a>
-        <a href="#support">Support</a>
-        <a class="btn btn-accent" href="/auth/login">Continue with Discord</a>
+        <a href="#faq">FAQ</a>
+        <a class="btn btn-accent" href="/auth/login">Sign in with Discord</a>
       </nav>
     </header>
 
@@ -24,15 +23,14 @@
         <p class="eyebrow">Shift tracking, built for Discord</p>
         <h1>Know exactly who's on shift, who's hitting quota, and who needs a nudge — without leaving Discord.</h1>
         <p class="hero-sub">
-          Clock on/off with a slash command, set weekly (or biweekly, or monthly) quotas per shift type,
-          and get a real dashboard your admins will actually use. One sign-in covers every community
-          your server runs.
+          Clock on/off with a slash command, set weekly quotas per shift type, and get a real
+          dashboard your admins will actually use.
         </p>
         <div class="hero-actions">
           <a class="btn btn-accent" href="/auth/login" style="padding: 13px 24px; font-size: 15px;">
-            Continue with Discord
+            Sign in with Discord
           </a>
-          <span class="hero-note">No credit card required to get started.</span>
+          <span class="hero-note">Sign in with the Discord account you use on the server.</span>
         </div>
         <div id="error" style="display:none" class="error-banner" style="max-width:480px;"></div>
       </section>
@@ -40,51 +38,45 @@
       <section class="features" id="how-it-works">
         <div class="feature-card">
           <h3>Clock on from Discord</h3>
-          <p><code class="mono">/shift on</code>, <code class="mono">/shift off</code>, and
-             <code class="mono">/shift break</code> — or the same controls on the dashboard.
-             Either one works; they share the same clock.</p>
+          <p><code class="mono">/shift on</code>, <code class="mono">/shift off</code>, or
+             <code class="mono">/shift manage</code> for an interactive panel — or the same
+             controls on the dashboard. Either one works; they share the same clock.</p>
         </div>
         <div class="feature-card">
-          <h3>Quotas that fit your schedule</h3>
-          <p>Weekly, biweekly, or monthly — per shift type or overall. Progress bars everywhere:
-             the dashboard, the roster, and right in Discord when someone clocks off.</p>
+          <h3>Quotas that fit your roster</h3>
+          <p>Set a weekly quota per shift type, or one overall. Progress bars everywhere: the
+             dashboard, the admin roster, and right in Discord when someone clocks off.</p>
         </div>
         <div class="feature-card">
-          <h3>An admin panel that covers it</h3>
-          <p>Live shift status, roster, LOA approvals, on-shift Discord roles, quota reminders,
-             and weekly reports you can regenerate any time — no spreadsheets.</p>
+          <h3>Shift types with role gates</h3>
+          <p>Restrict a shift type to a specific role — only Supervisors can start a
+             Supervisory Shift, for example — or leave it open to everyone.</p>
         </div>
         <div class="feature-card">
-          <h3>One account, every community</h3>
-          <p>Create a community from any server you manage, or join one with an invite code.
-             Switch between them from the same dashboard.</p>
+          <h3>A leaderboard that motivates</h3>
+          <p><code class="mono">/shiftleaderboard</code> shows this week's top hours, by shift
+             type or overall, right in your server.</p>
         </div>
       </section>
 
       <section class="faq" id="faq">
         <h2>A few questions</h2>
         <div class="faq-item">
-          <h4>Do I need to invite a bot to every server myself?</h4>
-          <p>Invite Shiftus once, then link each server as its own community from the dashboard —
-             slash commands are available there right away.</p>
-        </div>
-        <div class="faq-item">
-          <h4>What happens without an active subscription?</h4>
-          <p>Shift types, quotas, and permissions still work — you can fully set things up first.
-             Clocking on and logging time need an active subscription.</p>
+          <h4>Who can sign in?</h4>
+          <p>Anyone who's a member of the Discord server this bot is set up on. Admin and
+             time-logging access is controlled by roles, either from the <span class="mono" style="color: var(--accent)">.env</span>
+             file or granted in-app with <span class="mono" style="color: var(--accent)">/admin permissions</span>.</p>
         </div>
         <div class="faq-item">
           <h4>Where does my data live?</h4>
-          <p>Everything is scoped to your community: shift history, quotas, and reports aren't
-             visible to any other server using Shiftus.</p>
+          <p>In a local database on the server this bot runs on — there's no external service
+             involved.</p>
         </div>
       </section>
     </main>
 
-    <footer class="marketing-footer" id="support">
-      <span>Shiftus</span>
-      <a href="#faq">Documentation</a>
-      <a href="mailto:support@example.com">Support</a>
+    <footer class="marketing-footer">
+      <span>Duty Log</span>
     </footer>
   </div>
 
@@ -93,6 +85,7 @@
     const error = params.get("error");
     if (error) {
       const messages = {
+        not_in_server: "That Discord account isn't a member of the server this bot manages.",
         login_failed: "Something went wrong signing you in. Please try again.",
         missing_code: "Sign-in was cancelled.",
       };

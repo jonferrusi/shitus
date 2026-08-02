@@ -1,9 +1,7 @@
 // Shared helpers for dashboard.js and admin.js — loaded before both via a
-// plain <script> tag (no bundler here), so everything hangs off `window.Shiftus`.
+// plain <script> tag (no bundler here), so everything hangs off `window.DutyLog`.
 (function () {
   "use strict";
-
-  const STORAGE_KEY = "shiftus:communityId";
 
   function esc(s) {
     const d = document.createElement("div");
@@ -30,6 +28,12 @@
     return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
   }
 
+  function avatarUrl(user) {
+    const id = user.discord_id || user.id;
+    if (!user.avatar) return `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(id) % 5n)}.png`;
+    return `https://cdn.discordapp.com/avatars/${id}/${user.avatar}.png?size=64`;
+  }
+
   async function api(path, options) {
     const res = await fetch(path, {
       headers: { "Content-Type": "application/json" },
@@ -42,55 +46,24 @@
     return res;
   }
 
-  function getSelectedCommunityId() {
-    return localStorage.getItem(STORAGE_KEY);
-  }
-
-  function setSelectedCommunityId(id) {
-    localStorage.setItem(STORAGE_KEY, String(id));
-  }
-
-  async function loadCommunities() {
-    const res = await api("/api/communities");
-    return res.ok ? res.json() : [];
-  }
-
-  /**
-   * Populates a <select> with the user's communities and returns the id that
-   * ends up selected (localStorage's choice if still valid, else the first
-   * community). Wires the change handler to persist + call onChange.
-   */
-  function renderCommunitySwitcher(selectEl, communities, onChange) {
-    selectEl.innerHTML = communities
-      .map((c) => `<option value="${c.id}">${esc(c.name)}</option>`)
-      .join("");
-
-    const stored = getSelectedCommunityId();
-    const validIds = communities.map((c) => String(c.id));
-    const selected = validIds.includes(stored) ? stored : validIds[0];
-
-    if (selected) {
-      selectEl.value = selected;
-      setSelectedCommunityId(selected);
+  /** Disables a button and swaps its label while an async action runs, restoring both after. */
+  async function withButtonDisabled(button, fn) {
+    if (!button) return fn();
+    button.disabled = true;
+    const original = button.textContent;
+    try {
+      await fn();
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
     }
-
-    selectEl.addEventListener("change", () => {
-      setSelectedCommunityId(selectEl.value);
-      onChange(selectEl.value);
-    });
-
-    return selected || null;
   }
 
-  window.Shiftus = {
-    esc,
-    formatDuration,
-    pad2,
-    formatClock,
-    api,
-    getSelectedCommunityId,
-    setSelectedCommunityId,
-    loadCommunities,
-    renderCommunitySwitcher,
-  };
+  function showMessage(el, ok, text) {
+    el.style.display = "block";
+    el.style.color = ok ? "var(--good)" : "var(--warn)";
+    el.textContent = text;
+  }
+
+  window.DutyLog = { esc, formatDuration, formatClock, avatarUrl, api, withButtonDisabled, showMessage };
 })();

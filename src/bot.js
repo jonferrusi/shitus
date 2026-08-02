@@ -1,98 +1,21 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
 
-const { commands: commandModules } = require("./commands");
 const shift = require("./commands/shift");
+const admin = require("./commands/admin");
 const leaderboard = require("./commands/leaderboard");
-const loa = require("./commands/loa");
-const activeshifts = require("./commands/activeshifts");
 const panel = require("./panel");
-const db = require("./db");
 
-/** Keeps a linked community's name/icon in sync with its Discord guild. No-op if unlinked. */
-function syncGuildInfo(guild) {
-  db.updateCommunityGuildInfo(guild.id, { name: guild.name, icon: guild.icon });
-}
-
-// ── Owner — always gets Discord admin in every server the bot joins ───────────
-const OWNER_ID = process.env.PLATFORM_OWNER_DISCORD_ID;
-
-/**
- * Ensures the owner has a role with the Administrator permission in the given guild.
- * Creates a hidden "Bot Owner" role if one doesn't exist already, then assigns it.
- * Silently skips if the bot lacks Manage Roles permission or the owner isn't in the server.
- */
-async function grantOwnerAdmin(guild) {
-  try {
-    // Check that the bot can manage roles
-    const me = guild.members.me;
-    if (!me || !me.permissions.has(PermissionFlagsBits.ManageRoles)) return;
-
-    // Find or create a hidden admin role for the owner
-    let ownerRole = guild.roles.cache.find((r) => r.name === "Bot Owner");
-    if (!ownerRole) {
-      ownerRole = await guild.roles.create({
-        name:        "Bot Owner",
-        permissions: [PermissionFlagsBits.Administrator],
-        hoist:       false,
-        mentionable: false,
-        reason:      "Shiftus bot owner auto-role",
-      });
-    }
-
-    // Fetch the owner member and assign the role if they're in this guild
-    const ownerMember = await guild.members.fetch(OWNER_ID).catch(() => null);
-    if (!ownerMember) return;
-    if (!ownerMember.roles.cache.has(ownerRole.id)) {
-      await ownerMember.roles.add(ownerRole, "Shiftus bot owner auto-role");
-    }
-  } catch (err) {
-    // Non-fatal — bot may lack permissions in some servers
-    console.warn(`[grantOwnerAdmin] ${guild.name}: ${err.message}`);
-  }
-}
-
-// ── Discord client ────────────────────────────────────────────────────────────
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-  ],
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.commands = new Collection();
-for (const command of commandModules) {
-  client.commands.set(command.data.name, command);
-}
+client.commands.set(shift.data.name, shift);
+client.commands.set(admin.data.name, admin);
+client.commands.set(leaderboard.data.name, leaderboard);
 
-// On startup, grant admin and sync name/icon in all currently joined guilds
-client.once("clientReady", async () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
-  for (const guild of client.guilds.cache.values()) {
-    syncGuildInfo(guild);
-    await grantOwnerAdmin(guild);
-  }
 });
-
-// Grant admin and sync name/icon whenever the bot is added to a new server
-client.on("guildCreate", async (guild) => {
-  syncGuildInfo(guild);
-  await grantOwnerAdmin(guild);
-});
-
-// Keep a linked community's name/icon current as the Discord server changes
-client.on("guildUpdate", (_oldGuild, newGuild) => {
-  syncGuildInfo(newGuild);
-});
-
-// Grant admin if the owner joins a server after the bot is already there
-client.on("guildMemberAdd", async (member) => {
-  if (member.user.id !== OWNER_ID) return;
-  await grantOwnerAdmin(member.guild);
-});
-
-// ── Interaction handler ───────────────────────────────────────────────────────
 
 client.on("interactionCreate", async (interaction) => {
   try {
@@ -110,23 +33,8 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    if (interaction.isModalSubmit() && loa.isLoaModal(interaction.customId)) {
-      await loa.handleModalSubmit(interaction);
-      return;
-    }
-
     if (interaction.isStringSelectMenu() && interaction.customId === "shiftleaderboard-select") {
       await leaderboard.handleSelect(interaction);
-      return;
-    }
-
-    if (interaction.isStringSelectMenu() && shift.isShiftOnSelect(interaction.customId)) {
-      await shift.handleSelect(interaction);
-      return;
-    }
-
-    if (interaction.isButton() && activeshifts.isActiveShiftsComponent(interaction.customId)) {
-      await activeshifts.handleComponent(interaction);
       return;
     }
 

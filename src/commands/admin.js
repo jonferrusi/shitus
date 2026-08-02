@@ -1,7 +1,12 @@
-const { SlashCommandBuilder } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const db = require("../db");
-const { getCommunity, requireCommunityAdmin } = require("../communityContext");
-const { baseEmbed, GOLD, GREEN, RED, SPACER } = require("../format");
+const { baseEmbed } = require("../format");
+
+function isAdmin(interaction) {
+  if (interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  const adminRoleIds = db.effectiveRoleIds("admin");
+  return interaction.member.roles.cache.some((r) => adminRoleIds.has(r.id));
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -87,7 +92,7 @@ module.exports = {
         .addSubcommand((sub) =>
           sub
             .setName("remove")
-            .setDescription("Revoke a role's admin or add-time permission")
+            .setDescription("Revoke a role's admin or add-time permission (only removes in-app grants, not .env)")
             .addRoleOption((o) => o.setName("role").setDescription("Role to revoke").setRequired(true))
             .addStringOption((o) =>
               o
@@ -101,334 +106,162 @@ module.exports = {
             )
         )
         .addSubcommand((sub) => sub.setName("list").setDescription("List which roles have which permissions"))
-    )
-    .addSubcommandGroup((group) =>
-      group
-        .setName("roles")
-        .setDescription("Configure on-shift and LOA Discord roles")
-        .addSubcommand((sub) =>
-          sub
-            .setName("onshift")
-            .setDescription("Role assigned to anyone currently on any shift")
-            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
-        )
-        .addSubcommand((sub) =>
-          sub
-            .setName("supervisor")
-            .setDescription("Role that marks someone eligible for the active-supervisor role")
-            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
-        )
-        .addSubcommand((sub) =>
-          sub
-            .setName("activesupervisor")
-            .setDescription("Role assigned alongside on-shift when a supervisor clocks on")
-            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
-        )
-        .addSubcommand((sub) =>
-          sub
-            .setName("loa")
-            .setDescription("Role assigned to members on an approved Leave of Absence")
-            .addRoleOption((o) => o.setName("role").setDescription("Leave blank to clear").setRequired(false))
-        )
-        .addSubcommand((sub) => sub.setName("list").setDescription("Show current role configuration"))
     ),
 
   async autocomplete(interaction) {
-    const community = getCommunity(interaction);
-    if (!community) return interaction.respond([]);
-
     const focused = interaction.options.getFocused().toLowerCase();
-    const types = db.listShiftTypes(community.id);
+    const types = db.listShiftTypes();
     const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
     await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
   },
 
   async execute(interaction) {
-    const community = await requireCommunityAdmin(interaction);
-    if (!community) return;
+    if (!isAdmin(interaction)) {
+      return interaction.reply({
+        content: "You don't have permission to use admin commands.",
+        ephemeral: true,
+      });
+    }
 
     const group = interaction.options.getSubcommandGroup();
-    const sub   = interaction.options.getSubcommand();
+    const sub = interaction.options.getSubcommand();
 
     if (group === "shifttype") {
-      if (sub === "add")      return shiftTypeAdd(interaction, community);
-      if (sub === "remove")   return shiftTypeRemove(interaction, community);
-      if (sub === "restrict") return shiftTypeRestrict(interaction, community);
-      if (sub === "list")     return shiftTypeList(interaction, community);
+      if (sub === "add") return shiftTypeAdd(interaction);
+      if (sub === "remove") return shiftTypeRemove(interaction);
+      if (sub === "restrict") return shiftTypeRestrict(interaction);
+      if (sub === "list") return shiftTypeList(interaction);
     }
 
     if (group === "quota") {
-      if (sub === "set")  return quotaSet(interaction, community);
-      if (sub === "list") return quotaList(interaction, community);
-    }
-
-    if (group === "roles") {
-      if (sub === "list") return rolesList(interaction, community);
-      return rolesSet(interaction, community, sub);
+      if (sub === "set") return quotaSet(interaction);
+      if (sub === "list") return quotaList(interaction);
     }
 
     if (group === "permissions") {
-      if (sub === "add")    return permissionsAdd(interaction, community);
-      if (sub === "remove") return permissionsRemove(interaction, community);
-      if (sub === "list")   return permissionsList(interaction, community);
+      if (sub === "add") return permissionsAdd(interaction);
+      if (sub === "remove") return permissionsRemove(interaction);
+      if (sub === "list") return permissionsList(interaction);
     }
   },
 };
 
-// ── Shift Types ───────────────────────────────────────────────────────────────
-
-async function shiftTypeAdd(interaction, community) {
+async function shiftTypeAdd(interaction) {
   const name = interaction.options.getString("name", true).trim();
   const role = interaction.options.getRole("role");
-  db.addShiftType(community.id, name, role?.id ?? null);
-
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Shift Type Added")
-    .addFields(
-      { name: "Name",   value: `\`${name}\``,                                       inline: true },
-      { name: "Access", value: role ? `<@&${role.id}>` : "Everyone",                inline: true },
-    )
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
+  db.addShiftType(name, role?.id ?? null);
+  return interaction.reply({
+    content: role
+      ? `Added shift type **${name}**, restricted to the **${role.name}** role.`
+      : `Added shift type **${name}**. Anyone can start it.`,
+  });
 }
 
-async function shiftTypeRemove(interaction, community) {
-  const name   = interaction.options.getString("name", true).trim();
-  const result = db.removeShiftType(community.id, name);
-
+async function shiftTypeRemove(interaction) {
+  const name = interaction.options.getString("name", true).trim();
+  const result = db.removeShiftType(name);
   if (result.changes === 0) {
-    const embed = baseEmbed(interaction.client, RED)
-      .setTitle("Not Found")
-      .setDescription(`No shift type named **${name}** exists.`);
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ content: `No shift type named **${name}** found.`, ephemeral: true });
   }
-
-  const embed = baseEmbed(interaction.client)
-    .setTitle("Shift Type Deactivated")
-    .setDescription(`**${name}** has been deactivated. Past shifts logged under it are preserved.`)
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
+  return interaction.reply({ content: `Deactivated shift type **${name}**. Past shifts logged under it are kept.` });
 }
 
-async function shiftTypeRestrict(interaction, community) {
-  const name      = interaction.options.getString("name", true).trim();
-  const role      = interaction.options.getRole("role");
-  const shiftType = db.getShiftTypeByName(community.id, name);
-
+async function shiftTypeRestrict(interaction) {
+  const name = interaction.options.getString("name", true).trim();
+  const role = interaction.options.getRole("role");
+  const shiftType = db.getShiftTypeByName(name);
   if (!shiftType) {
-    const embed = baseEmbed(interaction.client, RED)
-      .setTitle("Not Found")
-      .setDescription(`No shift type named **${name}** found.`);
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ content: `No shift type named **${name}** found.`, ephemeral: true });
   }
 
-  db.setShiftTypeRequiredRole(community.id, name, role?.id ?? null);
-
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Shift Type Updated")
-    .addFields(
-      { name: "Shift Type", value: `\`${shiftType.name}\``,                       inline: true },
-      { name: "Access",     value: role ? `<@&${role.id}>` : "Everyone",           inline: true },
-    )
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
+  db.setShiftTypeRequiredRole(name, role?.id ?? null);
+  return interaction.reply({
+    content: role
+      ? `**${shiftType.name}** can now only be started by members with the **${role.name}** role.`
+      : `**${shiftType.name}** is no longer restricted — anyone can start it.`,
+  });
 }
 
-async function shiftTypeList(interaction, community) {
-  const types = db.listShiftTypes(community.id);
-
+async function shiftTypeList(interaction) {
+  const types = db.listShiftTypes();
   const embed = baseEmbed(interaction.client)
     .setTitle("Shift Types")
-    .setFooter({ text: `${types.length} type${types.length !== 1 ? "s" : ""}  ·  Shiftus` });
-
-  if (types.length === 0) {
-    embed.setDescription("No shift types configured yet.\nUse `/admin shifttype add` to create one.");
-    return interaction.reply({ embeds: [embed] });
-  }
-
-  embed.setDescription(
-    types
-      .map((t) =>
-        t.required_role_id
-          ? `🔒  **${t.name}** · restricted to <@&${t.required_role_id}>`
-          : `🌐  **${t.name}** · open to everyone`
-      )
-      .join("\n")
-  );
-
+    .setDescription(
+      types.length
+        ? types
+            .map((t) => `• ${t.name}${t.required_role_id ? ` — <@&${t.required_role_id}> only` : ""}`)
+            .join("\n")
+        : "No shift types configured yet."
+    );
   return interaction.reply({ embeds: [embed] });
 }
 
-// ── Quotas ────────────────────────────────────────────────────────────────────
-
-async function quotaSet(interaction, community) {
-  const hours    = interaction.options.getNumber("hours", true);
+async function quotaSet(interaction) {
+  const hours = interaction.options.getNumber("hours", true);
   const typeName = interaction.options.getString("type");
 
   let shiftTypeId = null;
   if (typeName) {
-    const shiftType = db.getShiftTypeByName(community.id, typeName);
+    const shiftType = db.getShiftTypeByName(typeName);
     if (!shiftType) {
-      const embed = baseEmbed(interaction.client, RED)
-        .setTitle("Not Found")
-        .setDescription(`No shift type named **${typeName}** found.`);
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ content: `No shift type named **${typeName}** found.`, ephemeral: true });
     }
     shiftTypeId = shiftType.id;
   }
 
-  db.setQuota(community.id, shiftTypeId, hours);
-
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Quota Updated")
-    .addFields(
-      { name: "Applies To", value: typeName ?? "Overall (all shift types)", inline: true },
-      { name: "Required",   value: `**${hours}h** per week`,                inline: true },
-    )
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
+  db.setQuota(shiftTypeId, hours);
+  return interaction.reply({
+    content: `Weekly quota for **${typeName ?? "overall (all shift types combined)"}** set to **${hours}h**.`,
+  });
 }
 
-async function quotaList(interaction, community) {
-  const quotas = db.listQuotas(community.id);
-
-  const embed = baseEmbed(interaction.client, GOLD)
-    .setTitle("Weekly Quotas")
-    .setFooter({ text: `${quotas.length} quota${quotas.length !== 1 ? "s" : ""}  ·  Shiftus` });
-
-  if (quotas.length === 0) {
-    embed.setDescription("No quotas set yet.\nUse `/admin quota set` to add one.");
-    return interaction.reply({ embeds: [embed] });
-  }
-
-  embed.setDescription(
-    quotas
-      .map((q) => `⏱  **${q.shift_type_name ?? "Overall"}** · ${q.hours_required}h / week`)
-      .join("\n")
-  );
-
-  return interaction.reply({ embeds: [embed] });
-}
-
-// ── Permissions ───────────────────────────────────────────────────────────────
-
-async function permissionsAdd(interaction, community) {
-  const role = interaction.options.getRole("role", true);
-  const type = interaction.options.getString("type", true);
-  db.addRolePermission(community.id, role.id, type);
-
-  const label = type === "admin" ? "Admin" : "Add Time";
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Permission Granted")
-    .addFields(
-      { name: "Role",       value: `<@&${role.id}>`, inline: true },
-      { name: "Permission", value: `**${label}**`,   inline: true },
-    )
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
-}
-
-async function permissionsRemove(interaction, community) {
-  const role = interaction.options.getRole("role", true);
-  const type = interaction.options.getString("type", true);
-  db.removeRolePermission(community.id, role.id, type);
-
-  const label = type === "admin" ? "Admin" : "Add Time";
+async function quotaList(interaction) {
+  const quotas = db.listQuotas();
   const embed = baseEmbed(interaction.client)
-    .setTitle("Permission Revoked")
-    .setDescription(`Removed **${label}** from <@&${role.id}>.\n-# If that role is also in the \`.env\` file, it still counts from there.`)
-    .setFooter({ text: "Shiftus" });
-
+    .setTitle("Weekly Quotas")
+    .setDescription(
+      quotas.length
+        ? quotas.map((q) => `• ${q.shift_type_name ?? "Overall"}: **${q.hours_required}h**`).join("\n")
+        : "No quotas configured yet."
+    );
   return interaction.reply({ embeds: [embed] });
 }
 
-async function permissionsList(interaction, community) {
-  const adminRoles   = db.listRolePermissions(community.id, "admin");
-  const addTimeRoles = db.listRolePermissions(community.id, "add_time");
+async function permissionsAdd(interaction) {
+  const role = interaction.options.getRole("role", true);
+  const type = interaction.options.getString("type", true);
+  db.addRolePermission(role.id, type);
+  return interaction.reply({
+    content: `**${role.name}** now has **${type === "admin" ? "Admin" : "Add Time"}** permission.`,
+  });
+}
+
+async function permissionsRemove(interaction) {
+  const role = interaction.options.getRole("role", true);
+  const type = interaction.options.getString("type", true);
+  db.removeRolePermission(role.id, type);
+  return interaction.reply({
+    content: `Removed **${type === "admin" ? "Admin" : "Add Time"}** permission from **${role.name}** (this only affects in-app grants — if that role is also listed in the .env file, it'll still have access from there).`,
+  });
+}
+
+async function permissionsList(interaction) {
+  const adminRoles = db.listRolePermissions("admin");
+  const addTimeRoles = db.listRolePermissions("add_time");
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Permissions")
     .addFields(
       {
-        name:  "🛡️  Admin",
-        value: adminRoles.length
-          ? adminRoles.map((id) => `<@&${id}>`).join("  ·  ")
-          : "_No roles granted_",
-        inline: false,
+        name: "Admin (granted in-app)",
+        value: adminRoles.length ? adminRoles.map((id) => `<@&${id}>`).join("\n") : "None",
       },
-      SPACER,
       {
-        name:  "✍️  Add Time",
-        value: addTimeRoles.length
-          ? addTimeRoles.map((id) => `<@&${id}>`).join("  ·  ")
-          : "_No roles granted_",
-        inline: false,
+        name: "Add Time (granted in-app)",
+        value: addTimeRoles.length ? addTimeRoles.map((id) => `<@&${id}>`).join("\n") : "None",
       }
     )
-    .setFooter({ text: "Roles set in .env also count but aren't listed here  ·  Shiftus" });
-
-  return interaction.reply({ embeds: [embed], ephemeral: true });
-}
-
-// ── On-shift / LOA roles ─────────────────────────────────────────────────────
-
-const ROLE_FIELD_BY_SUBCOMMAND = {
-  onshift: "onShiftRoleId",
-  supervisor: "supervisorCheckRoleId",
-  activesupervisor: "activeSupervisorRoleId",
-  loa: "loaRoleId",
-};
-
-const ROLE_LABEL_BY_SUBCOMMAND = {
-  onshift: "On-Shift Role",
-  supervisor: "Supervisor Check Role",
-  activesupervisor: "Active Supervisor Role",
-  loa: "LOA Role",
-};
-
-async function rolesSet(interaction, community, sub) {
-  const role = interaction.options.getRole("role");
-  const field = ROLE_FIELD_BY_SUBCOMMAND[sub];
-
-  db.updateCommunityRoles(community.id, {
-    onShiftRoleId: community.on_shift_role_id,
-    supervisorCheckRoleId: community.supervisor_check_role_id,
-    activeSupervisorRoleId: community.active_supervisor_role_id,
-    loaRoleId: community.loa_role_id,
-    [field]: role?.id ?? null,
-  });
-
-  const embed = baseEmbed(interaction.client, GREEN)
-    .setTitle("Role Updated")
-    .addFields(
-      { name: "Setting", value: ROLE_LABEL_BY_SUBCOMMAND[sub], inline: true },
-      { name: "Role", value: role ? `<@&${role.id}>` : "_Cleared_", inline: true },
-    )
-    .setFooter({ text: "Shiftus" });
-
-  return interaction.reply({ embeds: [embed] });
-}
-
-async function rolesList(interaction, community) {
-  const fresh = db.getCommunityById(community.id);
-  const row = (label, roleId) => `**${label}**  ${roleId ? `<@&${roleId}>` : "_Not set_"}`;
-
-  const embed = baseEmbed(interaction.client)
-    .setTitle("Role Configuration")
-    .setDescription(
-      [
-        row("On-Shift Role", fresh.on_shift_role_id),
-        row("Supervisor Check Role", fresh.supervisor_check_role_id),
-        row("Active Supervisor Role", fresh.active_supervisor_role_id),
-        row("LOA Role", fresh.loa_role_id),
-      ].join("\n")
-    )
-    .setFooter({ text: "Shiftus" });
+    .setFooter({ text: "Roles listed in the .env file also count, but aren't shown here." });
 
   return interaction.reply({ embeds: [embed], ephemeral: true });
 }
