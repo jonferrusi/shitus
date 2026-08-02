@@ -167,6 +167,35 @@ and counts toward weekly totals, quotas, and the leaderboard — it's just
 tagged internally as `manual` (vs `clock`) so you can tell the two apart if
 you ever query the database directly.
 
+## Deploying to Replit (free tier)
+
+Unlike some other free hosts, a Repl's filesystem **persists** across
+restarts and inactivity sleep, so `data.sqlite` just works here — no
+external database needed. Leave `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`
+blank.
+
+**1. Import this repo** — Create Repl → Import from GitHub. `.replit` and
+`replit.nix` are already set up to run `npm start` on Node.js 20, with port
+3000 mapped to the Replit webview.
+
+**2. Set Secrets** (the lock icon in the sidebar) — everything from
+`env.example` except `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` and `PORT`
+(already set in `.replit`). Set `OAUTH_REDIRECT_URI` to
+`https://<your-repl-name>.<your-username>.repl.co/auth/callback` (or your
+custom domain, if you've set one up) and add that same URL to the Discord
+Developer Portal's OAuth2 redirects.
+
+**3. Register the slash commands once** — either run `node
+src/deploy-commands.js` in the Repl's shell, or from your own machine with
+the same `DISCORD_TOKEN`/`DISCORD_CLIENT_ID`/`DISCORD_GUILD_ID` in a local
+`.env`.
+
+**4. Run it** — hit the Run button, or it'll start automatically the first
+time the webview is opened. By default a Repl sleeps after a period of
+inactivity, which drops the bot's Discord connection until the next visit;
+turn on **Always On** (a paid feature) if you need it connected 24/7 — the
+shift data itself is never at risk either way, since it's on disk.
+
 ## Deploying to Render (free tier)
 
 Render's free web services have no persistent disk and reset their local
