@@ -32,7 +32,7 @@ module.exports = {
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused().toLowerCase();
     const roleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
-    const types = db.listShiftTypesForRoles(roleIds);
+    const types = await db.listShiftTypesForRoles(roleIds);
     const filtered = types
       .filter((t) => t.name.toLowerCase().includes(focused))
       .slice(0, 25);
@@ -43,7 +43,7 @@ module.exports = {
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
-    db.upsertUser({
+    await db.upsertUser({
       discord_id: interaction.user.id,
       username: interaction.user.username,
       avatar: interaction.user.avatar,
@@ -59,13 +59,13 @@ module.exports = {
 async function handleManage(interaction) {
   // A normal (non-ephemeral) reply, so this is a real message the bot posts
   // in the channel and keeps editing in place as buttons/dropdowns are used.
-  const view = panel.currentPanel(interaction.client, interaction.user.id, interaction.user.username);
+  const view = await panel.currentPanel(interaction.client, interaction.user.id, interaction.user.username);
   return interaction.reply(view);
 }
 
 async function handleOn(interaction) {
   const typeName = interaction.options.getString("type", true);
-  const shiftType = db.getShiftTypeByName(typeName);
+  const shiftType = await db.getShiftTypeByName(typeName);
 
   if (!shiftType) {
     return interaction.reply({
@@ -81,7 +81,7 @@ async function handleOn(interaction) {
     });
   }
 
-  const active = db.getActiveShift(interaction.user.id);
+  const active = await db.getActiveShift(interaction.user.id);
   if (active) {
     return interaction.reply({
       content: `You're already clocked on to a shift. Use \`/shift off\` first.`,
@@ -89,7 +89,7 @@ async function handleOn(interaction) {
     });
   }
 
-  db.clockOn(interaction.user.id, shiftType.id);
+  await db.clockOn(interaction.user.id, shiftType.id);
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Clocked On")
@@ -101,7 +101,7 @@ async function handleOn(interaction) {
 }
 
 async function handleOff(interaction) {
-  const active = db.getActiveShift(interaction.user.id);
+  const active = await db.getActiveShift(interaction.user.id);
   if (!active) {
     return interaction.reply({
       content: "You're not currently on a shift.",
@@ -109,13 +109,13 @@ async function handleOff(interaction) {
     });
   }
 
-  const duration = db.clockOff(active.id);
-  const totals = db.weeklyTotalsByType(interaction.user.id);
-  const quotas = db.listQuotas();
+  const duration = await db.clockOff(active.id);
+  const totals = await db.weeklyTotalsByType(interaction.user.id);
+  const quotas = await db.listQuotas();
   const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
-  const shiftType = db
-    .listShiftTypes({ activeOnly: false })
-    .find((t) => t.id === active.shift_type_id);
+  const shiftType = (await db.listShiftTypes({ activeOnly: false })).find(
+    (t) => t.id === active.shift_type_id
+  );
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Clocked Off")
@@ -141,21 +141,22 @@ async function handleOff(interaction) {
 }
 
 async function handleStatus(interaction) {
-  const active = db.getActiveShift(interaction.user.id);
-  const totals = db.weeklyTotalsByType(interaction.user.id);
-  const quotas = db.listQuotas();
+  const active = await db.getActiveShift(interaction.user.id);
+  const totals = await db.weeklyTotalsByType(interaction.user.id);
+  const quotas = await db.listQuotas();
 
   const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
   const overallQuota = quotaByType.get(null);
+
+  const activeShiftType = active
+    ? (await db.listShiftTypes({ activeOnly: false })).find((t) => t.id === active.shift_type_id)
+    : null;
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Shift Status")
     .setDescription(
       active
-        ? `🟢 On shift: **${
-            db.listShiftTypes({ activeOnly: false }).find((t) => t.id === active.shift_type_id)
-              ?.name
-          }** since <t:${active.start_time}:t>`
+        ? `🟢 On shift: **${activeShiftType?.name}** since <t:${active.start_time}:t>`
         : "🔴 Not currently on shift"
     );
 

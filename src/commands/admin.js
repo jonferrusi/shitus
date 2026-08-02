@@ -2,9 +2,9 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const db = require("../db");
 const { baseEmbed } = require("../format");
 
-function isAdmin(interaction) {
+async function isAdmin(interaction) {
   if (interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-  const adminRoleIds = db.effectiveRoleIds("admin");
+  const adminRoleIds = await db.effectiveRoleIds("admin");
   return interaction.member.roles.cache.some((r) => adminRoleIds.has(r.id));
 }
 
@@ -110,13 +110,13 @@ module.exports = {
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused().toLowerCase();
-    const types = db.listShiftTypes();
+    const types = await db.listShiftTypes();
     const filtered = types.filter((t) => t.name.toLowerCase().includes(focused)).slice(0, 25);
     await interaction.respond(filtered.map((t) => ({ name: t.name, value: t.name })));
   },
 
   async execute(interaction) {
-    if (!isAdmin(interaction)) {
+    if (!(await isAdmin(interaction))) {
       return interaction.reply({
         content: "You don't have permission to use admin commands.",
         ephemeral: true,
@@ -149,7 +149,7 @@ module.exports = {
 async function shiftTypeAdd(interaction) {
   const name = interaction.options.getString("name", true).trim();
   const role = interaction.options.getRole("role");
-  db.addShiftType(name, role?.id ?? null);
+  await db.addShiftType(name, role?.id ?? null);
   return interaction.reply({
     content: role
       ? `Added shift type **${name}**, restricted to the **${role.name}** role.`
@@ -159,7 +159,7 @@ async function shiftTypeAdd(interaction) {
 
 async function shiftTypeRemove(interaction) {
   const name = interaction.options.getString("name", true).trim();
-  const result = db.removeShiftType(name);
+  const result = await db.removeShiftType(name);
   if (result.changes === 0) {
     return interaction.reply({ content: `No shift type named **${name}** found.`, ephemeral: true });
   }
@@ -169,12 +169,12 @@ async function shiftTypeRemove(interaction) {
 async function shiftTypeRestrict(interaction) {
   const name = interaction.options.getString("name", true).trim();
   const role = interaction.options.getRole("role");
-  const shiftType = db.getShiftTypeByName(name);
+  const shiftType = await db.getShiftTypeByName(name);
   if (!shiftType) {
     return interaction.reply({ content: `No shift type named **${name}** found.`, ephemeral: true });
   }
 
-  db.setShiftTypeRequiredRole(name, role?.id ?? null);
+  await db.setShiftTypeRequiredRole(name, role?.id ?? null);
   return interaction.reply({
     content: role
       ? `**${shiftType.name}** can now only be started by members with the **${role.name}** role.`
@@ -183,7 +183,7 @@ async function shiftTypeRestrict(interaction) {
 }
 
 async function shiftTypeList(interaction) {
-  const types = db.listShiftTypes();
+  const types = await db.listShiftTypes();
   const embed = baseEmbed(interaction.client)
     .setTitle("Shift Types")
     .setDescription(
@@ -202,21 +202,21 @@ async function quotaSet(interaction) {
 
   let shiftTypeId = null;
   if (typeName) {
-    const shiftType = db.getShiftTypeByName(typeName);
+    const shiftType = await db.getShiftTypeByName(typeName);
     if (!shiftType) {
       return interaction.reply({ content: `No shift type named **${typeName}** found.`, ephemeral: true });
     }
     shiftTypeId = shiftType.id;
   }
 
-  db.setQuota(shiftTypeId, hours);
+  await db.setQuota(shiftTypeId, hours);
   return interaction.reply({
     content: `Weekly quota for **${typeName ?? "overall (all shift types combined)"}** set to **${hours}h**.`,
   });
 }
 
 async function quotaList(interaction) {
-  const quotas = db.listQuotas();
+  const quotas = await db.listQuotas();
   const embed = baseEmbed(interaction.client)
     .setTitle("Weekly Quotas")
     .setDescription(
@@ -230,7 +230,7 @@ async function quotaList(interaction) {
 async function permissionsAdd(interaction) {
   const role = interaction.options.getRole("role", true);
   const type = interaction.options.getString("type", true);
-  db.addRolePermission(role.id, type);
+  await db.addRolePermission(role.id, type);
   return interaction.reply({
     content: `**${role.name}** now has **${type === "admin" ? "Admin" : "Add Time"}** permission.`,
   });
@@ -239,15 +239,15 @@ async function permissionsAdd(interaction) {
 async function permissionsRemove(interaction) {
   const role = interaction.options.getRole("role", true);
   const type = interaction.options.getString("type", true);
-  db.removeRolePermission(role.id, type);
+  await db.removeRolePermission(role.id, type);
   return interaction.reply({
     content: `Removed **${type === "admin" ? "Admin" : "Add Time"}** permission from **${role.name}** (this only affects in-app grants — if that role is also listed in the .env file, it'll still have access from there).`,
   });
 }
 
 async function permissionsList(interaction) {
-  const adminRoles = db.listRolePermissions("admin");
-  const addTimeRoles = db.listRolePermissions("add_time");
+  const adminRoles = await db.listRolePermissions("admin");
+  const addTimeRoles = await db.listRolePermissions("add_time");
 
   const embed = baseEmbed(interaction.client)
     .setTitle("Permissions")

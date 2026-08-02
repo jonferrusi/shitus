@@ -167,12 +167,66 @@ and counts toward weekly totals, quotas, and the leaderboard — it's just
 tagged internally as `manual` (vs `clock`) so you can tell the two apart if
 you ever query the database directly.
 
-## Deploying
+## Deploying to Render (free tier)
 
-This is a plain Node.js app with a SQLite file, so it runs as-is on a small
-VPS or a host like Railway/Render/Fly: set the same environment variables
-there, update `OAUTH_REDIRECT_URI` (and the matching Discord Developer
-Portal redirect) to your real domain, run `npm run deploy-commands` once,
-then `npm start` (it launches both the bot and the website together). Keep
-`data.sqlite` on a persistent volume — it's the only state that isn't
-reconstructible from Discord.
+Render's free web services have no persistent disk and reset their local
+filesystem every time the instance restarts — including the automatic
+sleep/wake cycle after 15 minutes of no traffic — so a local `data.sqlite`
+file would silently lose all shift data on a regular basis. To avoid that,
+this app talks to [Turso](https://turso.tech) (a free hosted SQLite-compatible
+database) instead of a local file whenever `TURSO_DATABASE_URL` is set, and
+only falls back to `data.sqlite` for local development.
+
+**1. Create a free Turso database**
+
+```bash
+curl -sSfL https://get.tur.so/install.sh | bash   # installs the turso CLI
+turso auth login
+turso db create duty-log
+turso db show duty-log --url                      # → TURSO_DATABASE_URL
+turso db tokens create duty-log                    # → TURSO_AUTH_TOKEN
+```
+
+(No CLI/terminal handy? The [Turso dashboard](https://app.turso.tech) can
+create a database and generate a token from the browser instead.)
+
+**2. Create the Render service**
+
+- New → Web Service → connect this repo.
+- Build command: `npm install`. Start command: `npm start`.
+- Instance type: Free.
+- Environment variables: everything from `env.example`, filled in with your
+  real values, plus `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` from step 1.
+  Set `OAUTH_REDIRECT_URI` to `https://<your-service>.onrender.com/auth/callback`
+  and add that same URL to the Discord Developer Portal's OAuth2 redirects.
+  Set `PORT` to whatever Render's free web services expect (Render sets its
+  own `PORT` automatically — you generally don't need to set this one).
+
+**3. Register the slash commands once**
+
+From your own machine, with `DISCORD_GUILD_ID` and the same `DISCORD_TOKEN`
+in your local `.env`:
+
+```bash
+npm run deploy-commands
+```
+
+**4. The free-tier sleep tradeoff**
+
+The bot's Discord connection still drops when the free instance spins down
+from inactivity — that part of Render's free tier can't be worked around
+without a paid "Starter" instance (or an external uptime pinger hitting the
+site periodically, which keeps it from sleeping but works against the
+inactivity model Render's free tier is designed around). What Turso does
+fix is data loss: whenever the instance wakes back up, it reconnects to the
+same Turso database and every shift, quota, and permission is exactly as
+you left it.
+
+## Deploying elsewhere
+
+Anywhere with a persistent filesystem (a small VPS, Railway, Fly, etc.)
+doesn't need Turso at all — just leave `TURSO_DATABASE_URL` blank, keep
+`data.sqlite` on a persistent volume, set the same environment variables,
+update `OAUTH_REDIRECT_URI` (and the matching Discord Developer Portal
+redirect) to your real domain, run `npm run deploy-commands` once, then
+`npm start` (it launches both the bot and the website together).

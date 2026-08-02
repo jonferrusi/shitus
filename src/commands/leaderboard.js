@@ -9,8 +9,8 @@ const { baseEmbed, formatDuration } = require("../format");
 const SELECT_ID = "shiftleaderboard-select";
 const OVERALL_VALUE = "overall";
 
-function buildSelectRow(selectedValue) {
-  const types = db.listShiftTypes();
+async function buildSelectRow(selectedValue) {
+  const types = await db.listShiftTypes();
   const menu = new StringSelectMenuBuilder()
     .setCustomId(SELECT_ID)
     .setPlaceholder("Choose a shift type…")
@@ -24,10 +24,10 @@ function buildSelectRow(selectedValue) {
   return new ActionRowBuilder().addComponents(menu);
 }
 
-function buildLeaderboardEmbed(client, shiftTypeId, typeName) {
+async function buildLeaderboardEmbed(client, shiftTypeId, typeName) {
   const weekStart = db.currentWeekStart();
-  const rows = db.weeklyLeaderboard(shiftTypeId, weekStart);
-  const quota = db.listQuotas().find((q) => q.shift_type_id === shiftTypeId);
+  const rows = await db.weeklyLeaderboard(shiftTypeId, weekStart);
+  const quota = (await db.listQuotas()).find((q) => q.shift_type_id === shiftTypeId);
   const quotaHours = quota?.hours_required ?? null;
 
   const embed = baseEmbed(client)
@@ -58,7 +58,7 @@ module.exports = {
     .setDescription("See who has the most shift hours this week"),
 
   async execute(interaction) {
-    const row = buildSelectRow();
+    const row = await buildSelectRow();
     await interaction.reply({
       content: "Pick a shift type to see this week's leaderboard:",
       components: [row],
@@ -72,10 +72,10 @@ module.exports = {
     const typeName =
       value === OVERALL_VALUE
         ? "Overall"
-        : db.listShiftTypes({ activeOnly: false }).find((t) => String(t.id) === value)?.name ?? "Unknown";
+        : (await db.listShiftTypes({ activeOnly: false })).find((t) => String(t.id) === value)?.name ?? "Unknown";
 
-    const embed = buildLeaderboardEmbed(interaction.client, shiftTypeId, typeName);
-    const row = buildSelectRow(value);
+    const embed = await buildLeaderboardEmbed(interaction.client, shiftTypeId, typeName);
+    const row = await buildSelectRow(value);
 
     await interaction.update({ content: "", embeds: [embed], components: [row] });
   },

@@ -57,13 +57,13 @@ function memberHasAnyRole(member, roleIds) {
   return member.roles.some((r) => roleIds.has(r));
 }
 
-function isAdminMember(member) {
-  return memberHasAnyRole(member, db.effectiveRoleIds("admin"));
+async function isAdminMember(member) {
+  return memberHasAnyRole(member, await db.effectiveRoleIds("admin"));
 }
 
 /** Admins can always add time by hand too, on top of whoever holds the add_time permission. */
-function canAddTimeMember(member) {
-  return isAdminMember(member) || memberHasAnyRole(member, db.effectiveRoleIds("add_time"));
+async function canAddTimeMember(member) {
+  return (await isAdminMember(member)) || memberHasAnyRole(member, await db.effectiveRoleIds("add_time"));
 }
 
 module.exports = {

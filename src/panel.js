@@ -26,9 +26,9 @@ function isPanelComponent(customId) {
 // Building the panel for a given state
 // --------------------------------------------------------------------------
 
-function weeklySummaryFields(discordId) {
-  const totals = db.weeklyTotalsByType(discordId);
-  const quotas = db.listQuotas();
+async function weeklySummaryFields(discordId) {
+  const totals = await db.weeklyTotalsByType(discordId);
+  const quotas = await db.listQuotas();
   const quotaByType = new Map(quotas.map((q) => [q.shift_type_id, q.hours_required]));
 
   return totals.map((t) => {
@@ -79,11 +79,11 @@ function onShiftRow(userId, onBreak) {
 }
 
 /** The "not on shift" panel — just a Start Shift button. */
-function idlePanel(client, discordId, username, note) {
+async function idlePanel(client, discordId, username, note) {
   const embed = baseEmbed(client)
     .setTitle("Shift Manager")
     .setDescription(`${note ? `${note}\n\n` : ""}🔴 **${username}** is not on shift.`)
-    .addFields(weeklySummaryFields(discordId))
+    .addFields(await weeklySummaryFields(discordId))
     .setFooter({ text: "Click Start Shift to begin" })
     .setTimestamp();
 
@@ -108,10 +108,10 @@ function typeChooserPanel(client, discordId, username, allowedTypes) {
 }
 
 /** The "on shift" (or "on break") panel, with break + end shift controls. */
-function onShiftPanel(client, discordId, username, active) {
-  const shiftType = db
-    .listShiftTypes({ activeOnly: false })
-    .find((t) => t.id === active.shift_type_id);
+async function onShiftPanel(client, discordId, username, active) {
+  const shiftType = (await db.listShiftTypes({ activeOnly: false })).find(
+    (t) => t.id === active.shift_type_id
+  );
   const onBreak = !!active.break_start;
 
   const embed = baseEmbed(client)
@@ -121,7 +121,7 @@ function onShiftPanel(client, discordId, username, active) {
         ? `☕ **${username}** is on break during a **${shiftType?.name ?? "shift"}** (started <t:${active.start_time}:t>).`
         : `🟢 **${username}** is on **${shiftType?.name ?? "shift"}**, started <t:${active.start_time}:t>.`
     )
-    .addFields(weeklySummaryFields(discordId))
+    .addFields(await weeklySummaryFields(discordId))
     .setFooter({ text: onBreak ? "Hit End Break to get back to counting" : "Counting toward this week's total" })
     .setTimestamp();
 
@@ -129,8 +129,8 @@ function onShiftPanel(client, discordId, username, active) {
 }
 
 /** Picks whichever panel matches the user's current DB state. Used as the default view. */
-function currentPanel(client, discordId, username, note) {
-  const active = db.getActiveShift(discordId);
+async function currentPanel(client, discordId, username, note) {
+  const active = await db.getActiveShift(discordId);
   if (!active) return idlePanel(client, discordId, username, note);
   return onShiftPanel(client, discordId, username, active);
 }
@@ -149,62 +149,62 @@ async function handleComponent(interaction) {
     });
   }
 
-  db.upsertUser({
+  await db.upsertUser({
     discord_id: interaction.user.id,
     username: interaction.user.username,
     avatar: interaction.user.avatar,
   });
 
   const username = interaction.user.username;
-  const active = db.getActiveShift(userId);
+  const active = await db.getActiveShift(userId);
   const client = interaction.client;
   const memberRoleIds = interaction.member ? [...interaction.member.roles.cache.keys()] : [];
 
   switch (action) {
     case "start": {
       // Already on shift (e.g. double click) — just show the real state instead.
-      if (active) return interaction.update(onShiftPanel(client, userId, username, active));
-      const allowedTypes = db.listShiftTypesForRoles(memberRoleIds);
+      if (active) return interaction.update(await onShiftPanel(client, userId, username, active));
+      const allowedTypes = await db.listShiftTypesForRoles(memberRoleIds);
       return interaction.update(typeChooserPanel(client, userId, username, allowedTypes));
     }
 
     case "type": {
-      if (active) return interaction.update(onShiftPanel(client, userId, username, active));
+      if (active) return interaction.update(await onShiftPanel(client, userId, username, active));
       const shiftTypeId = Number(interaction.values[0]);
-      const shiftType = db.listShiftTypes({ activeOnly: false }).find((t) => t.id === shiftTypeId);
+      const shiftType = (await db.listShiftTypes({ activeOnly: false })).find((t) => t.id === shiftTypeId);
       if (shiftType?.required_role_id && !memberRoleIds.includes(shiftType.required_role_id)) {
         return interaction.reply({
           content: `You need the <@&${shiftType.required_role_id}> role to start that shift.`,
           ephemeral: true,
         });
       }
-      db.clockOn(userId, shiftTypeId);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      await db.clockOn(userId, shiftTypeId);
+      const fresh = await db.getActiveShift(userId);
+      return interaction.update(await onShiftPanel(client, userId, username, fresh));
     }
 
     case "startbreak": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
-      db.startBreak(active.id);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      if (!active) return interaction.update(await idlePanel(client, userId, username));
+      await db.startBreak(active.id);
+      const fresh = await db.getActiveShift(userId);
+      return interaction.update(await onShiftPanel(client, userId, username, fresh));
     }
 
     case "endbreak": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
-      db.endBreak(active.id);
-      const fresh = db.getActiveShift(userId);
-      return interaction.update(onShiftPanel(client, userId, username, fresh));
+      if (!active) return interaction.update(await idlePanel(client, userId, username));
+      await db.endBreak(active.id);
+      const fresh = await db.getActiveShift(userId);
+      return interaction.update(await onShiftPanel(client, userId, username, fresh));
     }
 
     case "end": {
-      if (!active) return interaction.update(idlePanel(client, userId, username));
-      const duration = db.clockOff(active.id);
-      const shiftType = db
-        .listShiftTypes({ activeOnly: false })
-        .find((t) => t.id === active.shift_type_id);
+      if (!active) return interaction.update(await idlePanel(client, userId, username));
+      const duration = await db.clockOff(active.id);
+      const shiftType = (await db.listShiftTypes({ activeOnly: false })).find(
+        (t) => t.id === active.shift_type_id
+      );
       const note = `Logged **${formatDuration(duration)}** on **${shiftType?.name ?? "shift"}**.`;
-      return interaction.update(idlePanel(client, userId, username, note));
+      return interaction.update(await idlePanel(client, userId, username, note));
     }
 
     default:

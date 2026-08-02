@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
 
+const db = require("./db");
 const shift = require("./commands/shift");
 const admin = require("./commands/admin");
 const leaderboard = require("./commands/leaderboard");
@@ -54,4 +55,9 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+db.init()
+  .then(() => client.login(process.env.DISCORD_TOKEN))
+  .catch((err) => {
+    console.error("Failed to initialize the database:", err);
+    process.exit(1);
+  });
